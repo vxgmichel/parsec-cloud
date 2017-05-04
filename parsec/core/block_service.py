@@ -29,7 +29,6 @@ class BlockNotFound(BlockError):
 
 class cmd_CREATE_Schema(BaseCmdSchema):
     content = fields.String(required=True)
-    id = fields.String(missing=None)
 
 
 class cmd_READ_Schema(BaseCmdSchema):
@@ -43,7 +42,7 @@ class BaseBlockService(BaseService):
     @cmd('block_create')
     async def _cmd_CREATE(self, session, msg):
         msg = cmd_CREATE_Schema().load(msg)
-        id = await self.create(msg['content'], msg['id'])
+        id = await self.create(msg['content'])
         return {'status': 'ok', 'id': id}
 
     @cmd('block_read')
@@ -108,7 +107,10 @@ class InBackendBlockService(BaseBlockService):
         return '%s-%s' % (vlob['id'], vlob['read_trust_seed'])
 
     async def read(self, id):
-        id, trust_seed = id.split('-')
+        try:
+            id, trust_seed = id.split('-')
+        except ValueError:
+            trust_seed = id  # TODO correct?
         try:
             vlob = await self.backend_api_service.vlob_read(id, trust_seed)
         except VlobNotFound:
@@ -116,11 +118,14 @@ class InBackendBlockService(BaseBlockService):
         timestamp, content = vlob['blob'].split('-', 1)
         timestamp = float(timestamp)
         return {'content': content,
-                'access_timestamp': timestamp,
+                'access_timestamp': datetime.utcnow().timestamp(),
                 'creation_timestamp': timestamp}
 
     async def stat(self, id):
-        id, trust_seed = id.split('-')
+        try:
+            id, trust_seed = id.split('-')
+        except ValueError:
+            trust_seed = id  # TODO correct?
         try:
             vlob = await self.backend_api_service.vlob_read(id, trust_seed)
         except VlobNotFound:
@@ -239,8 +244,8 @@ class MetaBlockService(BaseBlockService):
             raise(BlockError('All backends failed to complete %s operation.' % operation))
         return result
 
-    async def create(self, content, id=None):
-        id = id if id else uuid4().hex  # TODO uuid4 or trust seed?
+    async def create(self, content):
+        id = uuid4().hex  # TODO uuid4 or trust seed?
         return await self._do_operation('create', content, id)
 
     async def read(self, id):

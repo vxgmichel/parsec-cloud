@@ -4,7 +4,7 @@ from freezegun import freeze_time
 
 from parsec.core import MetaBlockService, MockedBlockService, InBackendBlockService
 
-from .test_backend_api_service import bootstrap_BackendAPIService
+from test_backend_api_service import bootstrap_BackendAPIService
 
 
 async def bootstrap_MetaBlockService(request, event_loop, unused_tcp_port):
@@ -19,7 +19,8 @@ async def bootstrap_InBackendBlockService(request, event_loop, unused_tcp_port):
 
 
 @pytest.fixture(params=(MockedBlockService, bootstrap_MetaBlockService,
-    bootstrap_InBackendBlockService), ids=('mocked', 'meta', 'in_backend'))
+                        bootstrap_InBackendBlockService),
+                ids=('mocked', 'meta', 'in_backend'))
 def block_svc(request, event_loop, unused_tcp_port):
     if asyncio.iscoroutinefunction(request.param):
         return event_loop.run_until_complete(request.param(request, event_loop, unused_tcp_port))
@@ -40,12 +41,6 @@ class TestBlockServiceAPI:
         ret = await block_svc.dispatch_msg({'cmd': 'block_create', 'content': 'Foo.'})
         assert ret['status'] == 'ok'
         assert ret['id']
-
-    @pytest.mark.asyncio
-    async def test_create_with_id(self, block_svc):
-        ret = await block_svc.dispatch_msg({'cmd': 'block_create', 'content': 'Foo.', 'id': '1234'})
-        assert ret['status'] == 'ok'
-        assert ret['id'] == '1234'
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize('bad_msg', [
@@ -71,9 +66,12 @@ class TestBlockServiceAPI:
                     'creation_timestamp': creation_timestamp,
                     'content': block_content} == ret
         # Unknown block
-        ret = await block_svc.dispatch_msg({'cmd': 'block_read', 'id': '1234'})
-        assert {'status': 'block_error',
-                'label': 'All backends failed to complete read operation.'} == ret
+        ret = await block_svc.dispatch_msg({'cmd': 'block_read', 'id': '9876'})
+        error_1 = {'status': 'block_error',
+                   'label': 'All backends failed to complete read operation.'}
+        error_2 = {'status': 'not_found',
+                   'label': 'Block not found.'}
+        assert ret == error_1 or ret == error_2
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize('bad_msg', [
@@ -99,9 +97,12 @@ class TestBlockServiceAPI:
                     'access_timestamp': creation_timestamp,
                     'creation_timestamp': creation_timestamp} == ret
         # Unknown block
-        ret = await block_svc.dispatch_msg({'cmd': 'block_stat', 'id': '1234'})
-        assert {'status': 'block_error',
-                'label': 'All backends failed to complete stat operation.'} == ret
+        ret = await block_svc.dispatch_msg({'cmd': 'block_stat', 'id': '9876'})
+        error_1 = {'status': 'block_error',
+                   'label': 'All backends failed to complete stat operation.'}
+        error_2 = {'status': 'not_found',
+                   'label': 'Block not found.'}
+        assert ret == error_1 or ret == error_2
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize('bad_msg', [

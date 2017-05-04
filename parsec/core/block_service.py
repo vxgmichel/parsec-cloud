@@ -101,18 +101,15 @@ class InBackendBlockService(BaseBlockService):
 
     backend_api_service = service('BackendAPIService')
 
-    async def create(self, content, id=None):
+    async def create(self, content):
+        id = uuid4().hex  # TODO uuid4 or trust seed?
         body = '%s-%s' % (datetime.utcnow().timestamp(), content)
-        vlob = await self.backend_api_service.vlob_create(body)
-        return '%s-%s' % (vlob['id'], vlob['read_trust_seed'])
+        await self.backend_api_service.named_vlob_create(id, body)
+        return id
 
     async def read(self, id):
         try:
-            id, trust_seed = id.split('-')
-        except ValueError:
-            trust_seed = id  # TODO correct?
-        try:
-            vlob = await self.backend_api_service.vlob_read(id, trust_seed)
+            vlob = await self.backend_api_service.named_vlob_read(id, '42')
         except VlobNotFound:
             raise BlockNotFound('Block not found.')
         timestamp, content = vlob['blob'].split('-', 1)
@@ -123,11 +120,7 @@ class InBackendBlockService(BaseBlockService):
 
     async def stat(self, id):
         try:
-            id, trust_seed = id.split('-')
-        except ValueError:
-            trust_seed = id  # TODO correct?
-        try:
-            vlob = await self.backend_api_service.vlob_read(id, trust_seed)
+            vlob = await self.backend_api_service.named_vlob_read(id, '42')
         except VlobNotFound:
             raise BlockNotFound('Block not found.')
         timestamp, _ = vlob['blob'].split('-', 1)

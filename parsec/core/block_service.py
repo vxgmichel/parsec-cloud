@@ -8,9 +8,10 @@ from logbook import Logger
 from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
 
-from parsec.service import BaseService, cmd
+from parsec.service import BaseService, cmd, service
 from parsec.exceptions import ParsecError
 from parsec.tools import BaseCmdSchema
+from parsec.backend import VlobNotFound
 
 
 LOG_FORMAT = '[{record.time:%Y-%m-%d %H:%M:%S.%f%z}] ({record.thread_name})' \
@@ -95,6 +96,39 @@ class MockedBlockService(BaseBlockService):
                     'creation_timestamp': self._blocks[id]['creation_timestamp']}
         except KeyError:
             raise BlockNotFound('Block not found.')
+
+
+class InBackendBlockService(BaseBlockService):
+
+    backend_api_service = service('BackendAPIService')
+
+    async def create(self, content, id=None):
+        body = '%s-%s' % (datetime.utcnow().timestamp(), content)
+        vlob = await self.backend_api_service.vlob_create(body)
+        return '%s-%s' % (vlob['id'], vlob['read_trust_seed'])
+
+    async def read(self, id):
+        id, trust_seed = id.split('-')
+        try:
+            vlob = await self.backend_api_service.vlob_read(id, trust_seed)
+        except VlobNotFound:
+            raise BlockNotFound('Block not found.')
+        timestamp, content = vlob['blob'].split('-', 1)
+        timestamp = float(timestamp)
+        return {'content': content,
+                'access_timestamp': timestamp,
+                'creation_timestamp': timestamp}
+
+    async def stat(self, id):
+        id, trust_seed = id.split('-')
+        try:
+            vlob = await self.backend_api_service.vlob_read(id, trust_seed)
+        except VlobNotFound:
+            raise BlockNotFound('Block not found.')
+        timestamp, _ = vlob['blob'].split('-', 1)
+        timestamp = float(timestamp)
+        return {'access_timestamp': timestamp,
+                'creation_timestamp': timestamp}
 
 
 class DropboxBlockService(BaseBlockService):

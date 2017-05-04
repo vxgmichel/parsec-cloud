@@ -1,6 +1,7 @@
 from parsec.core.backend_api_service import MockedBackendAPIService, BackendAPIService
 from parsec.core.block_service import (
-    DropboxBlockService, GoogleDriveBlockService, MetaBlockService, MockedBlockService)
+    DropboxBlockService, GoogleDriveBlockService, MetaBlockService,
+    MockedBlockService, InBackendBlockService)
 from parsec.core.crypto_service import CryptoService
 from parsec.core.file_service import FileService
 from parsec.core.identity_service import IdentityService
@@ -18,8 +19,9 @@ __all__ = (
     'IdentityService',
     'GNUPGPubKeysService',
     'MetaBlockService',
-    'MockedBackendAPIService',
+    'InBackendBlockService',
     'MockedBlockService',
+    'MockedBackendAPIService',
     'ShareService',
     'UserManifestService',
 )

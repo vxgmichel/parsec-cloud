@@ -1,12 +1,30 @@
-from freezegun import freeze_time
 import pytest
+import asyncio
+from freezegun import freeze_time
 
-from parsec.core import MetaBlockService, MockedBlockService
+from parsec.core import MetaBlockService, MockedBlockService, InBackendBlockService
+
+from .test_backend_api_service import bootstrap_BackendAPIService
 
 
-@pytest.fixture(params=[[MockedBlockService], ])
-def block_svc(request):
-    return MetaBlockService(request.param)
+async def bootstrap_MetaBlockService(request, event_loop, unused_tcp_port):
+    return MetaBlockService(backends=[MockedBlockService])
+
+
+async def bootstrap_InBackendBlockService(request, event_loop, unused_tcp_port):
+    backend_api_svc = await bootstrap_BackendAPIService(request, event_loop, unused_tcp_port)
+    block_svc = InBackendBlockService()
+    block_svc.backend_api_service = backend_api_svc
+    return block_svc
+
+
+@pytest.fixture(params=(MockedBlockService, bootstrap_MetaBlockService,
+    bootstrap_InBackendBlockService), ids=('mocked', 'meta', 'in_backend'))
+def block_svc(request, event_loop, unused_tcp_port):
+    if asyncio.iscoroutinefunction(request.param):
+        return event_loop.run_until_complete(request.param(request, event_loop, unused_tcp_port))
+    else:
+        return request.param()
 
 
 @pytest.fixture

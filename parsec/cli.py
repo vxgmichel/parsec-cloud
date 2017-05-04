@@ -6,7 +6,8 @@ from parsec.server import UnixSocketServer, WebSocketServer
 from parsec.backend import (InMemoryMessageService, MockedGroupService, MockedNamedVlobService,
                             MockedVlobService)
 from parsec.core import (BackendAPIService, CryptoService, FileService, GNUPGPubKeysService,
-                         IdentityService, MetaBlockService, ShareService, UserManifestService)
+                         IdentityService, MetaBlockService, ShareService, UserManifestService,
+                         MockedBlockService)
 from parsec.ui.shell import start_shell
 
 
@@ -61,7 +62,7 @@ def fuse(mountpoint, identity, debug, nothreads, socket):
 def core(socket, backend_host):
     server = UnixSocketServer()
     server.register_service(BackendAPIService(backend_host))
-    server.register_service(MetaBlockService())
+    server.register_service(MetaBlockService(backends=[MockedBlockService, ]))
     server.register_service(CryptoService())
     server.register_service(FileService())
     server.register_service(GNUPGPubKeysService())

@@ -9,7 +9,6 @@ from parsec.core import MockedBackendAPIService, BackendAPIService
 
 
 async def bootstrap_BackendAPIService(request, event_loop, unused_tcp_port):
-    event_loop.set_debug(True)
     # Start a minimal backend server...
     server = WebSocketServer()
     vlob_service = MockedVlobService()

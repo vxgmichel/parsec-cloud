@@ -308,7 +308,6 @@ class FileService(BaseFileService):
         if version is None:
             version = stat['version'] - 1 if stat['version'] > 1 else 1
         if version > 0 and version < stat['version']:
-
             vlob = await self.backend_api_service.vlob_read(
                 id,
                 properties['read_trust_seed'],

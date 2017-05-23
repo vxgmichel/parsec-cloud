@@ -1,13 +1,14 @@
-import pytest
 import asyncio
 import botocore
-from io import BytesIO
-from freezegun import freeze_time
-from datetime import datetime, timezone
 from collections import defaultdict
+from datetime import datetime, timezone
+from freezegun import freeze_time
+from io import BytesIO
+import pytest
 
-from parsec.core import MetaBlockService, MockedBlockService, MockedCacheService
-from parsec.core.cache_service import CacheNotFound
+
+from parsec.core import MetaBlockService, MockedBlockService
+from parsec.core.cache import cache
 
 
 class MockedS3Client:
@@ -63,23 +64,16 @@ async def bootstrap_S3BlockService(request, event_loop):
 
 
 async def bootstrap_MetaBlockService(request, event_loop):
-    MockedBlockService.cache_service = cache_svc()
     return MetaBlockService([MockedBlockService, MockedBlockService])
-
-
-@pytest.fixture
-def cache_svc():
-    return MockedCacheService()
 
 
 @pytest.fixture(params=[MockedBlockService, bootstrap_S3BlockService, bootstrap_MetaBlockService],
                 ids=['mocked', 's3', 'metablock'])
-def block_svc(request, event_loop, cache_svc):
+def block_svc(request, event_loop):
     if asyncio.iscoroutinefunction(request.param):
         block_svc = event_loop.run_until_complete(request.param(request, event_loop))
     else:
         block_svc = request.param()
-    block_svc.cache_service = cache_svc
     return block_svc
 
 
@@ -92,7 +86,7 @@ def block(block_svc, event_loop, content='Whatever.'):
 class TestBlockServiceAPI:
 
     @pytest.mark.asyncio
-    async def test_create(self, block_svc, cache_svc):
+    async def test_create(self, block_svc):
         block_content = 'Whatever.'
         with freeze_time('2012-01-01') as frozen_datetime:
             creation_timestamp = frozen_datetime().timestamp()
@@ -102,17 +96,17 @@ class TestBlockServiceAPI:
             assert ret['id']
             block_id = ret['id']
             # Check block in cache
-            response = await cache_svc.get(('read', block_id))
+            response = await cache.get('read:' + block_id)
             assert response == {'content': block_content,
                                 'creation_timestamp': creation_timestamp,
                                 'status': 'ok'}
             # Check block in cache
-            response = await cache_svc.get(('stat', block_id))
+            response = await cache.get('stat:' + block_id)
             assert response == {'creation_timestamp': creation_timestamp,
                                 'status': 'ok'}
 
     @pytest.mark.asyncio
-    async def test_create_with_id(self, block_svc, cache_svc):
+    async def test_create_with_id(self, block_svc):
         block_id = '1234'
         block_content = 'Whatever.'
         with freeze_time('2012-01-01') as frozen_datetime:
@@ -124,12 +118,12 @@ class TestBlockServiceAPI:
             assert ret['status'] == 'ok'
             assert ret['id'] == '1234'
             # Check block in cache
-            response = await cache_svc.get(('read', block_id))
+            response = await cache.get('read:' + block_id)
             assert response == {'content': block_content,
                                 'creation_timestamp': creation_timestamp,
                                 'status': 'ok'}
             # Check block in cache
-            response = await cache_svc.get(('stat', block_id))
+            response = await cache.get('stat:' + block_id)
             assert response == {'creation_timestamp': creation_timestamp,
                                 'status': 'ok'}
 
@@ -145,12 +139,11 @@ class TestBlockServiceAPI:
 
     @pytest.mark.asyncio
     @freeze_time("2012-01-01")
-    async def test_read(self, block_svc, cache_svc, block):
+    async def test_read(self, block_svc, block):
         block_id, block_content = block
-        del cache_svc.cache[('read', block_id)]  # TODO too intrusive?
+        await cache.delete(('read', block_id))
         # Block not found in cache
-        with pytest.raises(CacheNotFound):
-            await cache_svc.get(('read', block_id))
+        assert await cache.get(('read', block_id)) is None
         # Read block
         with freeze_time('2012-01-01') as frozen_datetime:
             creation_timestamp = frozen_datetime().timestamp()
@@ -160,21 +153,21 @@ class TestBlockServiceAPI:
                     'creation_timestamp': creation_timestamp,
                     'content': block_content} == ret
         # Check block in cache
-        response = await cache_svc.get(('read', block_id))
+        response = await cache.get(('read', block_id))
         assert response == {'content': 'Whatever.',
                             'creation_timestamp': creation_timestamp,
                             'status': 'ok'}
         # Read using cache
-        await cache_svc.set(('read', block_id),
-                            {'content': 'cached content',
-                             'creation_timestamp': creation_timestamp,
-                             'status': 'ok'})
+        await cache.set(('read', block_id),
+                        {'content': 'cached content',
+                         'creation_timestamp': creation_timestamp,
+                         'status': 'ok'})
         ret = await block_svc.dispatch_msg({'cmd': 'block_read', 'id': block_id})
         assert {'status': 'ok',
                 'creation_timestamp': creation_timestamp,
                 'content': 'cached content'} == ret
         # Unknown block
-        ret = await block_svc.dispatch_msg({'cmd': 'block_read', 'id': '1234'})
+        ret = await block_svc.dispatch_msg({'cmd': 'block_read', 'id': 'unknown'})
         assert ret['status'] == 'not_found' or ret['status'] == 'block_error'  # TODO ok?
 
     @pytest.mark.asyncio
@@ -192,12 +185,11 @@ class TestBlockServiceAPI:
 
     @pytest.mark.asyncio
     @freeze_time("2012-01-01")
-    async def test_stat(self, block_svc, cache_svc, block):
+    async def test_stat(self, block_svc, block):
         block_id, block_content = block
         # Block not found in cache
-        del cache_svc.cache[('stat', block_id)]  # TODO too intrusive?
-        with pytest.raises(CacheNotFound):
-            await cache_svc.get(('stat', block_id))
+        await cache.delete(('stat', block_id))
+        assert await cache.get(('stat', block_id)) is None
         # Stat block
         with freeze_time('2012-01-01') as frozen_datetime:
             creation_timestamp = frozen_datetime().timestamp()
@@ -205,19 +197,18 @@ class TestBlockServiceAPI:
             assert {'status': 'ok',
                     'creation_timestamp': creation_timestamp} == ret
         # Check block in cache
-        response = await cache_svc.get(('stat', block_id))
-        assert response == {'creation_timestamp': creation_timestamp,
-                            'status': 'ok'}
+        response = await cache.get(('stat', block_id))
+        assert response == {'creation_timestamp': creation_timestamp, 'status': 'ok'}
         # Stat using cache
         new_timestamp = datetime.utcnow().timestamp()
-        await cache_svc.set(('stat', block_id),
-                            {'creation_timestamp': new_timestamp,
-                             'status': 'ok'})
+        await cache.set(('stat', block_id),
+                        {'creation_timestamp': new_timestamp,
+                         'status': 'ok'})
         ret = await block_svc.dispatch_msg({'cmd': 'block_stat', 'id': block_id})
         assert {'status': 'ok',
                 'creation_timestamp': new_timestamp} == ret
         # Unknown block
-        ret = await block_svc.dispatch_msg({'cmd': 'block_stat', 'id': '1234'})
+        ret = await block_svc.dispatch_msg({'cmd': 'block_stat', 'id': 'unknown'})
         assert ret['status'] == 'not_found' or ret['status'] == 'block_error'  # TODO ok?
 
     @pytest.mark.asyncio

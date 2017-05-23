@@ -8,9 +8,8 @@ from functools import partial
 from datetime import datetime
 from marshmallow import fields
 
-from parsec.service import service, cmd
-from parsec.core.block_service import BaseBlockService, BlockNotFound, BlockError
-from parsec.core.cache_service import CacheNotFound
+from parsec.service import cmd
+from parsec.core.block_service import BaseBlockService, BlockNotFound, BlockError, cached
 from parsec.tools import BaseCmdSchema
 
 
@@ -22,8 +21,6 @@ class cmd_INIT_Schema(BaseCmdSchema):
 
 
 class S3BlockService(BaseBlockService):
-
-    cache_service = service('CacheService')
 
     def __init__(self):
         super().__init__()
@@ -43,6 +40,7 @@ class S3BlockService(BaseBlockService):
                                 aws_secret_access_key=s3_secret)
         self._s3_bucket = s3_bucket
 
+    @cached
     async def create(self, content, id=None):
         if not self._s3:
             raise BlockError('S3 block service is not initialized')
@@ -57,44 +55,30 @@ class S3BlockService(BaseBlockService):
             await get_event_loop().run_in_executor(None, func)
         except (S3ClientError, S3EndpointConnectionError) as exc:
             raise BlockError(str(exc))
-        stat = await self.stat(id)
-        timestamp = stat['creation_timestamp']
-        await self.cache_service.set(('read', id), {'content': content,
-                                                    'creation_timestamp': timestamp,
-                                                    'status': 'ok'})
-        await self.cache_service.set(('stat', id), {'creation_timestamp': timestamp,
-                                                    'status': 'ok'})
         return id
 
+    @cached
     async def read(self, id):
+        if not self._s3:
+            raise BlockError('S3 block service is not initialized')
+        func = partial(self._s3.get_object, Bucket=self._s3_bucket, Key=id)
         try:
-            response = await self.cache_service.get(('read', id))
-        except CacheNotFound:
-            if not self._s3:
-                raise BlockError('S3 block service is not initialized')
-            func = partial(self._s3.get_object, Bucket=self._s3_bucket, Key=id)
-            try:
-                obj = await get_event_loop().run_in_executor(None, func)
-            except (S3ClientError, S3EndpointConnectionError) as exc:
-                raise BlockNotFound(str(exc))
-            response = {
-                'content': obj['Body'].read().decode(),
-                'creation_timestamp': float(obj['Metadata']['created'])
-            }
-            await self.cache_service.set(('read', id), response)
-        return response
+            obj = await get_event_loop().run_in_executor(None, func)
+        except (S3ClientError, S3EndpointConnectionError) as exc:
+            raise BlockNotFound(str(exc))
+        return {
+            'content': obj['Body'].read().decode(),
+            'creation_timestamp': float(obj['Metadata']['created']),
+            'status': 'ok'
+        }
 
+    @cached
     async def stat(self, id):
+        if not self._s3:
+            raise BlockError('S3 block service is not initialized')
+        func = partial(self._s3.get_object, Bucket=self._s3_bucket, Key=id)
         try:
-            response = await self.cache_service.get(('stat', id))
-        except CacheNotFound:
-            if not self._s3:
-                raise BlockError('S3 block service is not initialized')
-            func = partial(self._s3.get_object, Bucket=self._s3_bucket, Key=id)
-            try:
-                obj = await get_event_loop().run_in_executor(None, func)
-            except (S3ClientError, S3EndpointConnectionError) as exc:
-                raise BlockNotFound(str(exc))
-            response = {'creation_timestamp': float(obj['Metadata']['created'])}
-            await self.cache_service.set(('stat', id), response)
-        return response
+            obj = await get_event_loop().run_in_executor(None, func)
+        except (S3ClientError, S3EndpointConnectionError) as exc:
+            raise BlockNotFound(str(exc))
+        return {'creation_timestamp': float(obj['Metadata']['created']), 'status': 'ok'}

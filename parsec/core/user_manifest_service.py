@@ -212,20 +212,19 @@ class Manifest():
         self.original_manifest = {'entries': deepcopy(self.entries),
                                   'dustbin': deepcopy(self.dustbin),
                                   'versions': {}}
-        self.handler = partial(event_handler, self.reload, self)
+        self.handler = partial(event_handler, self.reload, reset=False)
 
     async def reload(self):
         raise NotImplementedError()
 
     async def is_dirty(self):
         current_manifest = json.loads(await self.dumps())
-        dirty = False
         diff = await self.diff(self.original_manifest, current_manifest)
         for category in diff.keys():
             for operation in diff[category].keys():
                 if diff[category][operation]:
-                    dirty = True
-        return dirty
+                    return True
+        return False
 
     async def diff(self, old_manifest, new_manifest):
         diff = {}

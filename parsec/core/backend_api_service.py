@@ -1,14 +1,13 @@
-import json
 import asyncio
-import websockets
 import blinker
+import inspect
+import json
+import websockets
 
-from parsec.service import service
 from parsec.backend import (
     MockedGroupService, InMemoryMessageService, MockedVlobService, MockedNamedVlobService
 )
-from parsec.core import MockedCacheService
-from parsec.core.cache_service import CacheNotFound
+from parsec.core.cache import cache
 from parsec.exceptions import exception_from_status
 from parsec.service import BaseService
 from parsec.tools import logger
@@ -26,14 +25,57 @@ def _patch_service_event_namespace(service, ns):
     service._events = {k: ns.signal(v.name) for k, v in service._events.items()}
 
 
+def cached(method):
+
+    def get_arg(arg, args, kwargs):
+        try:
+            return kwargs[arg]
+        except KeyError:
+            properties = inspect.getargspec(method)
+            arg_index = properties.args.index(arg)
+            try:
+                return args[arg_index]
+            except IndexError:
+                defaults_values = dict(zip(reversed(properties.args),
+                                           reversed(properties.defaults)))
+                return defaults_values[arg]
+
+    async def inner(*args, **kwargs):
+        method_name = method.__name__
+        response = None
+        if method_name in ['named_vlob_create', 'vlob_create']:
+            blob = get_arg('blob', args, kwargs)
+            response = await method(*args, **kwargs)
+            cached_content = {'status': 'ok', 'id': response['id'], 'blob': blob, 'version': 1}
+            await cache.set(response['id'] + ':1', cached_content)
+        elif method_name in ['named_vlob_read', 'vlob_read']:
+            id = get_arg('id', args, kwargs)
+            version = get_arg('version', args, kwargs)
+            if version:
+                response = await cache.get(id + ':' + str(version))
+            if not response:
+                response = await method(*args, **kwargs)
+                await cache.set(id + ':' + str(response['version']), response)
+        elif method_name in ['named_vlob_update', 'vlob_update']:
+            id = get_arg('id', args, kwargs)
+            blob = get_arg('blob', args, kwargs)
+            version = get_arg('version', args, kwargs)
+            response = await method(*args, **kwargs)
+            cached_content = {'status': 'ok', 'id': id, 'blob': blob, 'version': version}
+            await cache.set(id + ':' + str(version), cached_content)
+        else:
+            response = await method(*args, **kwargs)
+        return response
+
+    return inner
+
+
 class BaseBackendAPIService(BaseService):
 
     name = 'BackendAPIService'
 
 
 class BackendAPIService(BaseBackendAPIService):
-
-    cache_service = service('CacheService')
 
     def __init__(self, backend_url, watchdog=None):
         super().__init__()
@@ -137,29 +179,21 @@ class BackendAPIService(BaseBackendAPIService):
         ret = await self._send_cmd(msg)
         return [msg['body'] for msg in ret['messages']]
 
+    @cached
     async def named_vlob_create(self, id, blob=''):
         assert isinstance(blob, str)
         msg = {'cmd': 'named_vlob_create', 'id': id, 'blob': blob}
-        response = await self._send_cmd(msg)
-        content = {'status': 'ok', 'id': id, 'blob': blob, 'version': 1}
-        await self.cache_service.set((id, 1), content)
-        return response
+        return await self._send_cmd(msg)
 
+    @cached
     async def named_vlob_read(self, id, trust_seed, version=None):
         assert isinstance(id, str)
         msg = {'cmd': 'named_vlob_read', 'id': id, 'trust_seed': trust_seed}
-        response = None
         if version:
             msg['version'] = version
-            try:
-                response = await self.cache_service.get((id, version))
-            except CacheNotFound:
-                pass
-        if not response:
-            response = await self._send_cmd(msg)
-            await self.cache_service.set((id, response['version']), response)
-        return response
+        return await self._send_cmd(msg)
 
+    @cached
     async def named_vlob_update(self, id, version, trust_seed, blob=''):
         msg = {
             'cmd': 'named_vlob_update',
@@ -168,34 +202,23 @@ class BackendAPIService(BaseBackendAPIService):
             'trust_seed': trust_seed,
             'blob': blob
         }
-        response = await self._send_cmd(msg)
-        content = {'status': 'ok', 'id': id, 'blob': blob, 'version': version}
-        await self.cache_service.set((id, version), content)
-        return response
+        return await self._send_cmd(msg)
 
+    @cached
     async def vlob_create(self, blob=''):
         assert isinstance(blob, str)
         msg = {'cmd': 'vlob_create', 'blob': blob}
-        response = await self._send_cmd(msg)
-        content = {'status': 'ok', 'id': id, 'blob': blob, 'version': 1}
-        await self.cache_service.set((id, 1), content)
-        return response
+        return await self._send_cmd(msg)
 
+    @cached
     async def vlob_read(self, id, trust_seed, version=None):
         assert isinstance(id, str)
         msg = {'cmd': 'vlob_read', 'id': id, 'trust_seed': trust_seed}
-        response = None
         if version:
             msg['version'] = version
-            try:
-                response = await self.cache_service.get((id, version))
-            except CacheNotFound:
-                pass
-        if not response:
-            response = await self._send_cmd(msg)
-            await self.cache_service.set((id, response['version']), response)
-        return response
+        return await self._send_cmd(msg)
 
+    @cached
     async def vlob_update(self, id, version, trust_seed, blob=''):
         msg = {
             'cmd': 'vlob_update',
@@ -204,17 +227,13 @@ class BackendAPIService(BaseBackendAPIService):
             'trust_seed': trust_seed,
             'blob': blob
         }
-        response = await self._send_cmd(msg)
-        content = {'status': 'ok', 'id': id, 'blob': blob, 'version': version}
-        await self.cache_service.set((id, version), content)
-        return response
+        return await self._send_cmd(msg)
 
 
 class MockedBackendAPIService(BaseBackendAPIService):
 
     def __init__(self):
         super().__init__()
-        self._cache_service = MockedCacheService()
         self._group_service = MockedGroupService()
         self._message_service = InMemoryMessageService()
         self._named_vlob_service = MockedNamedVlobService()
@@ -222,7 +241,6 @@ class MockedBackendAPIService(BaseBackendAPIService):
         # Backend services should not share the same event namespace than
         # core ones
         self._backend_event_ns = blinker.Namespace()
-        _patch_service_event_namespace(self._cache_service, self._backend_event_ns)
         _patch_service_event_namespace(self._group_service, self._backend_event_ns)
         _patch_service_event_namespace(self._message_service, self._backend_event_ns)
         _patch_service_event_namespace(self._named_vlob_service, self._backend_event_ns)
@@ -263,28 +281,20 @@ class MockedBackendAPIService(BaseBackendAPIService):
         ret = await self._message_service._cmd_GET(None, msg)
         return [msg['body'] for msg in ret['messages']]
 
+    @cached
     async def named_vlob_create(self, id, blob=''):
         assert isinstance(blob, str)
         msg = {'cmd': 'named_vlob_create', 'id': id, 'blob': blob}
-        response = await self._named_vlob_service._cmd_CREATE(None, msg)
-        content = {'status': 'ok', 'id': id, 'blob': blob, 'version': 1}
-        await self._cache_service.set((response['id'], 1), content)
-        return response
+        return await self._named_vlob_service._cmd_CREATE(None, msg)
 
+    @cached
     async def named_vlob_read(self, id, trust_seed, version=None):
         msg = {'cmd': 'named_vlob_read', 'id': id, 'trust_seed': trust_seed}
-        response = None
         if version:
             msg['version'] = version
-            try:
-                response = await self._cache_service.get((id, version))
-            except CacheNotFound:
-                pass
-        if not response:
-            response = await self._named_vlob_service._cmd_READ(None, msg)
-            await self._cache_service.set((id, response['version']), response)
-        return response
+        return await self._named_vlob_service._cmd_READ(None, msg)
 
+    @cached
     async def named_vlob_update(self, id, version, trust_seed, blob=''):
         msg = {
             'cmd': 'named_vlob_update',
@@ -294,31 +304,21 @@ class MockedBackendAPIService(BaseBackendAPIService):
             'blob': blob
         }
         await self._named_vlob_service._cmd_UPDATE(None, msg)
-        content = {'status': 'ok', 'id': id, 'blob': blob, 'version': version}
-        await self._cache_service.set((id, version), content)
 
+    @cached
     async def vlob_create(self, blob=''):
         assert isinstance(blob, str)
         msg = {'cmd': 'vlob_create', 'blob': blob}
-        response = await self._vlob_service._cmd_CREATE(None, msg)
-        content = {'status': 'ok', 'id': id, 'blob': blob, 'version': 1}
-        await self._cache_service.set((response['id'], 1), content)
-        return response
+        return await self._vlob_service._cmd_CREATE(None, msg)
 
+    @cached
     async def vlob_read(self, id, trust_seed, version=None):
         msg = {'cmd': 'vlob_read', 'id': id, 'trust_seed': trust_seed}
-        response = None
         if version:
             msg['version'] = version
-            try:
-                response = await self._cache_service.get((id, version))
-            except CacheNotFound:
-                pass
-        if not response:
-            response = await self._vlob_service._cmd_READ(None, msg)
-            await self._cache_service.set((id, response['version']), response)
-        return response
+        return await self._vlob_service._cmd_READ(None, msg)
 
+    @cached
     async def vlob_update(self, id, version, trust_seed, blob=''):
         msg = {
             'cmd': 'vlob_update',
@@ -328,5 +328,3 @@ class MockedBackendAPIService(BaseBackendAPIService):
             'blob': blob
         }
         await self._vlob_service._cmd_UPDATE(None, msg)
-        content = {'status': 'ok', 'id': id, 'blob': blob, 'version': version}
-        await self._cache_service.set((id, version), content)

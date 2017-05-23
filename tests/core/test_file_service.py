@@ -12,8 +12,8 @@ import pytest
 
 from parsec.core import (CryptoService, FileService,
                          IdentityService, GNUPGPubKeysService, MetaBlockService,
-                         MockedBackendAPIService, MockedBlockService, MockedCacheService,
-                         ShareService, UserManifestService)
+                         MockedBackendAPIService, MockedBlockService, ShareService,
+                         UserManifestService)
 from parsec.core.file_service import FileNotFound
 from parsec.server import BaseServer
 
@@ -37,8 +37,6 @@ def crypto_svc():
 def file_svc(event_loop, user_manifest_svc, crypto_svc):
     identity = '81DBCF6EB9C8B2965A65ACE5520D903047D69DC9'
     service = FileService()
-    mocked_cache_service = MockedCacheService()
-    MockedBlockService.cache_service = mocked_cache_service
     block_service = MetaBlockService(backends=[MockedBlockService, MockedBlockService])
     identity_service = IdentityService()
     server = BaseServer()
@@ -46,7 +44,6 @@ def file_svc(event_loop, user_manifest_svc, crypto_svc):
     server.register_service(block_service)
     server.register_service(crypto_svc)
     server.register_service(identity_service)
-    server.register_service(mocked_cache_service)
     server.register_service(user_manifest_svc)
     server.register_service(GNUPGPubKeysService())
     server.register_service(MockedBackendAPIService())

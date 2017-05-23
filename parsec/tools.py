@@ -31,9 +31,9 @@ def async_callback(callback, *args, **kwargs):
     return event_handler
 
 
-def event_handler(callback, sender, *args):
+def event_handler(callback, sender, **kwargs):
     loop = asyncio.get_event_loop()
-    loop.call_soon(asyncio.ensure_future, callback(*args))
+    loop.call_soon(asyncio.ensure_future, callback(**kwargs))
 
 
 class UnknownCheckedSchema(Schema):

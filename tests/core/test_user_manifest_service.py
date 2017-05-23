@@ -9,7 +9,7 @@ import pytest
 
 from parsec.core import (CryptoService, FileService, IdentityService, GNUPGPubKeysService,
                          MetaBlockService, MockedBackendAPIService, MockedBlockService,
-                         MockedCacheService, ShareService, UserManifestService)
+                         ShareService, UserManifestService)
 from parsec.core.user_manifest_service import (GroupManifest, Manifest, UserManifest,
                                                UserManifestError, UserManifestNotFound)
 from parsec.server import BaseServer
@@ -67,14 +67,11 @@ def user_manifest_svc(event_loop, file_svc, identity_svc, share_svc):
     identity = '81DBCF6EB9C8B2965A65ACE5520D903047D69DC9'
     service = UserManifestService()
     block_service = MetaBlockService(backends=[MockedBlockService, MockedBlockService])
-    cache_svc = MockedCacheService()
-    MockedBlockService.cache_service = cache_svc
     crypto_service = CryptoService()
     crypto_service.gnupg = gnupg.GPG(homedir=GNUPG_HOME + '/secret_env')
     server = BaseServer()
     server.register_service(service)
     server.register_service(block_service)
-    server.register_service(cache_svc)
     server.register_service(crypto_service)
     server.register_service(file_svc)
     server.register_service(identity_svc)

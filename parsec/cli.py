@@ -8,9 +8,9 @@ from parsec.tools import logger_stream
 from parsec.server import UnixSocketServer, WebSocketServer
 from parsec.backend import (InMemoryMessageService, MockedGroupService, MockedUserVlobService,
                             MockedVlobService, InMemoryPubKeyService)
-# from parsec.core import (BackendAPIService, CryptoService, FileService, GNUPGPubKeysService,
-#                          IdentityService, MockedBlockService, MockedCacheService, ShareService,
-#                          UserManifestService)
+# from parsec.core import (BackendAPIService, FileService, GNUPGPubKeysService, IdentityService,
+#                          MockedBlockService, MockedCacheService, ShareService, UserManifestService
+#                          )
 from parsec.core2 import CoreService, BackendAPIService, MockedBlockService, IdentityService
 from parsec.ui.shell import start_shell
 

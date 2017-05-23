@@ -295,21 +295,49 @@ class TestManifest:
                         'versions': {}}
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize('path', ['/test', '/test_dir/test'])
-    async def test_add_file(self, manifest, path):
+    @pytest.mark.parametrize('final_slash', ['', '/'])
+    async def test_add_file(self, manifest, final_slash):
         file_vlob = {'id': '123', 'key': '123', 'read_trust_seed': '123', 'write_trust_seed': '123'}
-        await manifest.add_file('/test', file_vlob)
+        await manifest.add_file('/test' + final_slash, file_vlob)
+        # Already exists
         with pytest.raises(UserManifestError):
             await manifest.add_file('/test', file_vlob)
+        # Parent not found
+        with pytest.raises(UserManifestNotFound):
+            await manifest.add_file('/test_dir/test', file_vlob)
+        # Parent found
+        await manifest.make_dir('/test_dir')
+        await manifest.add_file('/test_dir/test', file_vlob)
 
     @pytest.mark.asyncio
-    async def test_rename_file(self, manifest):
+    @pytest.mark.parametrize('final_slash', ['', '/'])
+    async def test_rename_file(self, manifest, final_slash):
         file_vlob = {'id': '123', 'key': '123', 'read_trust_seed': '123', 'write_trust_seed': '123'}
-        await manifest.add_file('/test', file_vlob)
-        await manifest.rename_file('/test', '/foo')
+        await manifest.make_dir('/test')
+        await manifest.add_file('/test/test', file_vlob)
+        # Rename file
+        await manifest.rename_file('/test/test' + final_slash, '/test/foo' + final_slash)
+        with pytest.raises(UserManifestNotFound):
+            await manifest.list_dir('/test/test')
+        await manifest.list_dir('/test/foo')
+        # Rename dir
+        await manifest.rename_file('/test' + final_slash, '/foo' + final_slash)
         with pytest.raises(UserManifestNotFound):
             await manifest.list_dir('/test')
+        with pytest.raises(UserManifestNotFound):
+            await manifest.list_dir('/test/foo')
         await manifest.list_dir('/foo')
+        await manifest.list_dir('/foo/foo')
+        # Rename parent and parent not found
+        with pytest.raises(UserManifestNotFound):
+            await manifest.rename_file('/foo/foo' + final_slash, '/test/test' + final_slash)
+        await manifest.list_dir('/foo')
+        await manifest.list_dir('/foo/foo')
+        # Rename parent and parent found
+        await manifest.make_dir('/test')
+        await manifest.rename_file('/foo/foo' + final_slash, '/test/test' + final_slash)
+        await manifest.list_dir('/test')
+        await manifest.list_dir('/test/test')
 
     @pytest.mark.asyncio
     async def test_rename_file_and_source_not_exists(self, manifest):
@@ -328,17 +356,18 @@ class TestManifest:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize('path', ['/test', '/test_dir/test'])
-    async def test_delete_file(self, manifest, path):
+    @pytest.mark.parametrize('final_slash', ['', '/'])
+    async def test_delete_file(self, manifest, path, final_slash):
         file_vlob = {'id': '123', 'key': '123', 'read_trust_seed': '123', 'write_trust_seed': '123'}
         await manifest.make_dir('/test_dir')
         for persistent_path in ['/persistent', '/test_dir/persistent']:
             await manifest.add_file(persistent_path, file_vlob)
         for i in [1, 2]:
             await manifest.add_file(path, file_vlob)
-            await manifest.delete_file(path)
+            await manifest.delete_file(path + final_slash)
             # File not found
             with pytest.raises(UserManifestNotFound):
-                await manifest.delete_file(path)
+                await manifest.delete_file(path + final_slash)
             # Persistent files
             for persistent_path in ['/persistent', '/test_dir/persistent']:
                 await manifest.list_dir(persistent_path)
@@ -357,9 +386,12 @@ class TestManifest:
         await manifest.add_file(path, file_vlob)
         await manifest.list_dir(path)
         await manifest.delete_file(path)
+        await manifest.remove_dir('/test_dir')
         # Working
         await manifest.restore_file(file_vlob['id'])
         await manifest.list_dir(path)
+        if path.startswith('/test_dir'):
+            await manifest.list_dir('/test_dir')
         # Not found
         with pytest.raises(UserManifestNotFound):
             await manifest.restore_file(file_vlob['id'])
@@ -371,14 +403,16 @@ class TestManifest:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize('path', ['/test', '/test_dir/test'])
-    async def test_reencrypt_file(self, file_svc, user_manifest_svc, path):
+    @pytest.mark.parametrize('final_slash', ['', '/'])
+    async def test_reencrypt_file(self, file_svc, user_manifest_svc, path, final_slash):
         encoded_content_initial = encodebytes('content 1'.encode()).decode()
         encoded_content_final = encodebytes('content 2'.encode()).decode()
+        await user_manifest_svc.make_dir('/test_dir')
         file_vlob = await user_manifest_svc.create_file(path, encoded_content_initial)
         manifest = await user_manifest_svc.get_manifest()
         old_vlob = await user_manifest_svc.get_properties(path=path)
         assert old_vlob == file_vlob
-        await manifest.reencrypt_file(path)
+        await manifest.reencrypt_file(path + final_slash)
         new_vlob = await user_manifest_svc.get_properties(path=path)
         for property in old_vlob.keys():
             assert new_vlob[property] != old_vlob[property]
@@ -415,8 +449,11 @@ class TestManifest:
 
         await assert_ls('/', ['.root', 'countries'])
         await assert_ls('/countries', ['index', 'Belgium', 'France'])
+        await assert_ls('/countries/', ['index', 'Belgium', 'France'])
         await assert_ls('/countries/France/cities', [])
+        await assert_ls('/countries/France/cities/', [])
         await assert_ls('/countries/France/info', [])
+        await assert_ls('/countries/France/info/', [])
 
         # Test bad list as well
         with pytest.raises(UserManifestNotFound):
@@ -424,21 +461,36 @@ class TestManifest:
             await manifest.list_dir('/countries/dummy')
 
     @pytest.mark.asyncio
-    async def test_make_dir(self, manifest):
+    @pytest.mark.parametrize('parents', ['/', '/parent_1/', '/parent_1/parent_2/'])
+    @pytest.mark.parametrize('final_slash', ['', '/'])
+    @pytest.mark.parametrize('create_parents', [False, True])
+    async def test_make_dir(self, manifest, parents, final_slash, create_parents):
+        complete_path = parents + 'test_dir' + final_slash
         # Working
-        await manifest.make_dir('/test_dir')
+        if parents == '/' or create_parents:
+            await manifest.make_dir(complete_path, parents=create_parents)
+        else:
+            # Parents not found
+            with pytest.raises(UserManifestNotFound):
+                await manifest.make_dir(complete_path, parents=create_parents)
         # Already exist
-        with pytest.raises(UserManifestError):
-            await manifest.make_dir('/test_dir')
+        if create_parents:
+            await manifest.make_dir(complete_path, parents=create_parents)
+        else:
+            with pytest.raises(UserManifestError):
+                await manifest.make_dir(complete_path, parents=create_parents)
 
     @pytest.mark.asyncio
-    async def test_remove_dir(self, manifest):
+    @pytest.mark.parametrize('final_slash', ['', '/'])
+    async def test_remove_dir(self, manifest, final_slash):
         # Working
         await manifest.make_dir('/test_dir')
-        await manifest.remove_dir('/test_dir')
+        await manifest.remove_dir('/test_dir' + final_slash)
         # Not found
         with pytest.raises(UserManifestNotFound):
             await manifest.remove_dir('/test_dir')
+        with pytest.raises(UserManifestNotFound):
+            await manifest.remove_dir('/test_dir/')
 
     @pytest.mark.asyncio
     async def test_cant_remove_root_dir(self, manifest):
@@ -446,26 +498,29 @@ class TestManifest:
             await manifest.remove_dir('/')
 
     @pytest.mark.asyncio
-    async def test_remove_not_empty_dir(self, manifest):
+    @pytest.mark.parametrize('final_slash', ['', '/'])
+    async def test_remove_not_empty_dir(self, manifest, final_slash):
         # Not empty
         await manifest.make_dir('/test_dir')
         await manifest.make_dir('/test_dir/test')
         with pytest.raises(UserManifestError):
-            await manifest.remove_dir('/test_dir')
+            await manifest.remove_dir('/test_dir' + final_slash)
         # Empty
-        await manifest.remove_dir('/test_dir/test')
-        await manifest.remove_dir('/test_dir')
+        await manifest.remove_dir('/test_dir/test' + final_slash)
+        await manifest.remove_dir('/test_dir' + final_slash)
 
     @pytest.mark.asyncio
-    async def test_remove_not_dir(self, manifest):
+    @pytest.mark.parametrize('final_slash', ['', '/'])
+    async def test_remove_not_dir(self, manifest, final_slash):
         file_vlob = {'id': '123', 'key': '123', 'read_trust_seed': '123', 'write_trust_seed': '123'}
-        await manifest.add_file('/test_dir', file_vlob)
+        await manifest.add_file('/test_dir' + final_slash, file_vlob)
         with pytest.raises(UserManifestError):
             await manifest.remove_dir('/test_dir')
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize('path', ['/test', '/test_dir/test'])
-    async def test_show_dustbin(self, manifest, path):
+    @pytest.mark.parametrize('final_slash', ['', '/'])
+    async def test_show_dustbin(self, manifest, path, final_slash):
         file_vlob = {'id': '123', 'key': '123', 'read_trust_seed': '123', 'write_trust_seed': '123'}
         # Empty dustbin
         dustbin = await manifest.show_dustbin()
@@ -480,7 +535,7 @@ class TestManifest:
             dustbin = await manifest.show_dustbin()
             assert len(dustbin) == i + 1
             # File in dustbin
-            dustbin = await manifest.show_dustbin(path)
+            dustbin = await manifest.show_dustbin(path + final_slash)
             assert len(dustbin) == i
             # Not found
             with pytest.raises(UserManifestNotFound):
@@ -524,6 +579,7 @@ class TestGroupManifest:
 
     @pytest.mark.asyncio
     async def test_diff_versions(self, user_manifest_svc, group_manifest):
+        dir_vlob = {'id': None, 'read_trust_seed': None, 'write_trust_seed': None, 'key': None}
         # Old version (0) and new version (0) of non-saved manifest
         manifest = GroupManifest(group_manifest.service)
         diff = await manifest.diff_versions(0, 0)
@@ -548,22 +604,27 @@ class TestGroupManifest:
                         'versions': {'added': {}, 'changed': {}, 'removed': {}}}
         # Old version (3) and new version (5)
         await group_manifest.save()
+        await group_manifest.make_dir('/dir')
         await group_manifest.add_file('/dir/foo', file_vlob)
         await group_manifest.save()
         await group_manifest.add_file('/dir/bar', file_vlob)
         await group_manifest.save()
         await group_manifest.add_file('/dir/last', file_vlob)
         diff = await group_manifest.diff_versions(3, 5)
-        assert diff == {'entries': {'added': {'/dir/bar': file_vlob, '/dir/foo': file_vlob},
+        assert diff == {'entries': {'added': {'/dir': dir_vlob,
+                                              '/dir/bar': file_vlob,
+                                              '/dir/foo': file_vlob},
                                     'changed': {},
                                     'removed': {}},
                         'dustbin': {'removed': [], 'added': []},
                         'versions': {'added': {}, 'changed': {}, 'removed': {}}}
-        # Old version (6) and new version (4)
+        # Old version (5) and new version (3)
         diff = await group_manifest.diff_versions(5, 3)
         assert diff == {'entries': {'added': {},
                                     'changed': {},
-                                    'removed': {'/dir/bar': file_vlob, '/dir/foo': file_vlob}},
+                                    'removed': {'/dir': dir_vlob,
+                                                '/dir/bar': file_vlob,
+                                                '/dir/foo': file_vlob}},
                         'dustbin': {'removed': [], 'added': []},
                         'versions': {'added': {}, 'changed': {}, 'removed': {}}}
         # No old version (use original) and new version (4)
@@ -843,6 +904,7 @@ class TestUserManifest:
 
     @pytest.mark.asyncio
     async def test_diff_versions(self, file_svc, user_manifest):
+        dir_vlob = {'id': None, 'read_trust_seed': None, 'write_trust_seed': None, 'key': None}
         # Old version (0) and new version (0) of non-saved manifest
         manifest = UserManifest(user_manifest.service, 'i123')
         diff = await manifest.diff_versions(0, 0)
@@ -874,13 +936,16 @@ class TestUserManifest:
                         'versions': {'added': {}, 'changed': {}, 'removed': {}}}
         # Old version (3) and new version (5)
         await user_manifest.save()
+        await user_manifest.make_dir('/dir')
         await user_manifest.add_file('/dir/foo', file_vlob)
         await user_manifest.save()
         await user_manifest.add_file('/dir/bar', file_vlob)
         await user_manifest.save()
         await user_manifest.add_file('/dir/last', file_vlob)
         diff = await user_manifest.diff_versions(3, 5)
-        assert diff == {'entries': {'added': {'/dir/bar': file_vlob, '/dir/foo': file_vlob},
+        assert diff == {'entries': {'added': {'/dir': dir_vlob,
+                                              '/dir/bar': file_vlob,
+                                              '/dir/foo': file_vlob},
                                     'changed': {},
                                     'removed': {}},
                         'groups': {'added': {}, 'changed': {}, 'removed': {}},
@@ -890,7 +955,9 @@ class TestUserManifest:
         diff = await user_manifest.diff_versions(5, 3)
         assert diff == {'entries': {'added': {},
                                     'changed': {},
-                                    'removed': {'/dir/bar': file_vlob, '/dir/foo': file_vlob}},
+                                    'removed': {'/dir': dir_vlob,
+                                                '/dir/bar': file_vlob,
+                                                '/dir/foo': file_vlob}},
                         'groups': {'added': {}, 'changed': {}, 'removed': {}},
                         'dustbin': {'removed': [], 'added': []},
                         'versions': {'added': {}, 'changed': {}, 'removed': {}}}
@@ -1341,7 +1408,7 @@ class TestUserManifestService:
     @pytest.mark.parametrize('group', [None, 'foo_community'])
     @pytest.mark.parametrize('path', ['/test', '/test_dir/test'])
     async def test_delete_file(self, user_manifest_svc, user_manifest_with_group, group, path):
-        await user_manifest_svc.make_dir('/test_dir', group)
+        await user_manifest_svc.make_dir('/test_dir', group=group)
         for persistent_path in ['/persistent', '/test_dir/persistent']:
             await user_manifest_svc.create_file(persistent_path, group=group)
         for i in [1, 2]:
@@ -1382,7 +1449,7 @@ class TestUserManifestService:
     @pytest.mark.parametrize('group', [None, 'foo_community'])
     @pytest.mark.parametrize('path', ['/test', '/test_dir/test'])
     async def test_restore_file(self, user_manifest_svc, user_manifest_with_group, group, path):
-        await user_manifest_svc.make_dir('/test_dir', group)
+        await user_manifest_svc.make_dir('/test_dir', group=group)
         await user_manifest_svc.create_file(path, group=group)
         current, _ = await user_manifest_svc.list_dir(path, group)
         vlob_id = current['id']
@@ -1420,11 +1487,8 @@ class TestUserManifestService:
     @pytest.mark.parametrize('group', [None, 'foo_community'])
     async def test_list_dir(self, user_manifest_svc, user_manifest_with_group, group):
         # Create folders
-        await user_manifest_svc.make_dir('/countries', group)
-        await user_manifest_svc.make_dir('/countries/France', group)
-        await user_manifest_svc.make_dir('/countries/France/cities', group)
-        await user_manifest_svc.make_dir('/countries/Belgium', group)
-        await user_manifest_svc.make_dir('/countries/Belgium/cities', group)
+        await user_manifest_svc.make_dir('/countries/France/cities', parents=True, group=group)
+        await user_manifest_svc.make_dir('/countries/Belgium/cities', parents=True, group=group)
         # Create multiple files
         await user_manifest_svc.create_file('/.root', group=group)
         await user_manifest_svc.create_file('/countries/index', group=group)
@@ -1470,7 +1534,7 @@ class TestUserManifestService:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize('group', [None, 'foo_community'])
-    async def test_create_dir(self, user_manifest_svc, user_manifest_with_group, group):
+    async def test_make_dir(self, user_manifest_svc, user_manifest_with_group, group):
         # Working
         ret = await user_manifest_svc.dispatch_msg({'cmd': 'user_manifest_make_dir',
                                                     'path': '/test_dir',
@@ -1479,12 +1543,15 @@ class TestUserManifestService:
         # Already exist
         ret = await user_manifest_svc.dispatch_msg({'cmd': 'user_manifest_make_dir',
                                                     'path': '/test_dir',
+                                                    'parents': False,
                                                     'group': group})
         assert ret == {'status': 'already_exists', 'label': 'Directory already exists.'}
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize('bad_msg', [
-        {'cmd': 'user_manifest_make_dir', 'path': '/foo', 'group': 'share', 'bad_field': 'foo'},
+        {'cmd': 'user_manifest_make_dir', 'path': '/foo', 'group': 'share', 'parents': True,
+         'bad_field': 'foo'},
+        {'cmd': 'user_manifest_make_dir', 'path': '/foo', 'group': 'share', 'parents': 'yes'},
         {'cmd': 'user_manifest_make_dir', 'path': '/foo', 'group': 42},
         {'cmd': 'user_manifest_make_dir', 'path': 42},
         {'cmd': 'user_manifest_make_dir'}, {}])
@@ -1496,7 +1563,7 @@ class TestUserManifestService:
     @pytest.mark.parametrize('group', [None, 'foo_community'])
     async def test_remove_dir(self, user_manifest_svc, user_manifest_with_group, group):
         # Working
-        await user_manifest_svc.make_dir('/test_dir', group)
+        await user_manifest_svc.make_dir('/test_dir', group=group)
         ret = await user_manifest_svc.dispatch_msg({'cmd': 'user_manifest_remove_dir',
                                                     'path': '/test_dir',
                                                     'group': group})
@@ -1519,7 +1586,7 @@ class TestUserManifestService:
     @pytest.mark.parametrize('group', [None, 'foo_community'])
     async def test_remove_not_empty_dir(self, user_manifest_svc, user_manifest_with_group, group):
         # Not empty
-        await user_manifest_svc.make_dir('/test_dir', group)
+        await user_manifest_svc.make_dir('/test_dir', group=group)
         await user_manifest_svc.create_file('/test_dir/test', group=group)
         ret = await user_manifest_svc.dispatch_msg({'cmd': 'user_manifest_remove_dir',
                                                     'path': '/test_dir',
@@ -1564,7 +1631,7 @@ class TestUserManifestService:
         assert ret == {'status': 'ok', 'dustbin': []}
         await user_manifest_svc.create_file('/foo', group=group)
         await user_manifest_svc.delete_file('/foo', group)
-        await user_manifest_svc.make_dir('/test_dir', group)
+        await user_manifest_svc.make_dir('/test_dir', group=group)
         for i in [1, 2]:
             await user_manifest_svc.create_file(path, group=group)
             await user_manifest_svc.delete_file(path, group)
@@ -1967,7 +2034,6 @@ class TestUserManifestService:
         await user_manifest_svc.create_file('/bar', encode_content('v1'), group=group)
         await user_manifest_svc.restore_file(dust_vlob['id'], group=group)
         await file_svc.write(dust_vlob['id'], 2, encode_content('v2'))
-        await user_manifest_svc.create_file('/baz', encode_content('v1'), group=group)
         # Previous version
         ret = await user_manifest_svc.dispatch_msg({'cmd': 'user_manifest_restore', 'group': group})
         assert ret == {'status': 'ok'}

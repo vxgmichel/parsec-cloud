@@ -1,7 +1,6 @@
 import json
 
 
-
 class ExceptionsMap:
     def __init__(self):
         self.map = {}
@@ -10,7 +9,7 @@ class ExceptionsMap:
         already_exists = self.map.get(kls.status)
         if already_exists:
             raise RuntimeError('Exceptions %s conflicts with %s (both has status %s)' %
-                (kls, already_exists, already_exists.status))
+                               (kls, already_exists, already_exists.status))
         self.map[kls.status] = kls
 
     def retrieve(self, status):

@@ -5,12 +5,11 @@ import blinker
 
 from parsec.service import service
 from parsec.backend import (
-    MockedGroupService, InMemoryMessageService, MockedVlobService, MockedNamedVlobService,
-    VlobNotFound
+    MockedGroupService, InMemoryMessageService, MockedVlobService, MockedNamedVlobService
 )
 from parsec.core import MockedCacheService
 from parsec.core.cache_service import CacheNotFound
-from parsec.backend.vlob_service import VlobError
+from parsec.exceptions import exception_from_status
 from parsec.service import BaseService
 from parsec.tools import logger
 

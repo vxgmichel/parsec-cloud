@@ -4,6 +4,7 @@ from functools import partial
 from base64 import encodebytes, decodebytes
 from datetime import datetime
 from marshmallow import fields
+import os
 
 from parsec.core.crypto_service import CryptoError
 from parsec.backend.vlob_service import VlobNotFound
@@ -53,6 +54,7 @@ class cmd_LIST_DIR_Schema(BaseCmdSchema):
 
 class cmd_MAKE_DIR_Schema(BaseCmdSchema):
     path = fields.String(required=True)
+    parents = fields.Boolean(missing=False)
     group = fields.String(missing=None)
 
 
@@ -121,7 +123,7 @@ class BaseUserManifestService(BaseService):
     @cmd('user_manifest_make_dir')
     async def _cmd_MAKE_DIR(self, session, msg):
         msg = cmd_MAKE_DIR_Schema().load(msg)
-        await self.make_dir(msg['path'], msg['group'])
+        await self.make_dir(msg['path'], msg['parents'], msg['group'])
         return {'status': 'ok'}
 
     @cmd('user_manifest_remove_dir')
@@ -173,7 +175,7 @@ class BaseUserManifestService(BaseService):
     async def list_dir(self, path, group):
         raise NotImplementedError()
 
-    async def make_dir(self, path, group):
+    async def make_dir(self, path, parents, group):
         raise NotImplementedError()
 
     async def remove_dir(self, path, group):
@@ -192,7 +194,7 @@ class BaseUserManifestService(BaseService):
         raise NotImplementedError()
 
 
-class Manifest(object):
+class Manifest():
 
     def __init__(self, service, id=None, key=None, read_trust_seed=None, write_trust_seed=None):
         self.service = service
@@ -324,19 +326,32 @@ class Manifest(object):
         pass
 
     async def add_file(self, path, vlob):
+        path = '/' + path.strip('/')
+        parent_directory = os.path.dirname(path)
+        if parent_directory not in self.entries:
+            raise UserManifestNotFound('Destination directory not found.')
         if path in self.entries:
             raise UserManifestError('already_exists', 'File already exists.')
         self.entries[path] = vlob
 
     async def rename_file(self, old_path, new_path):
+        old_path = '/' + old_path.strip('/')
+        new_path = '/' + new_path.strip('/')
+        new_parent_directory = os.path.dirname(new_path)
+        if new_parent_directory not in self.entries:
+            raise UserManifestNotFound('Destination directory not found.')
         if new_path in self.entries:
             raise UserManifestError('already_exists', 'File already exists.')
         if old_path not in self.entries:
             raise UserManifestNotFound('File not found.')
-        self.entries[new_path] = self.entries[old_path]
-        del self.entries[old_path]
+        for entry, vlob in self.entries.items():
+            if entry.startswith(old_path):
+                new_entry = new_path + entry[len(old_path):]
+                self.entries[new_entry] = vlob
+                del self.entries[entry]
 
     async def delete_file(self, path):
+        path = '/' + path.strip('/')
         try:
             entry = self.entries[path]
         except KeyError:
@@ -357,11 +372,14 @@ class Manifest(object):
                 del entry['path']
                 del entry['removed_date']
                 self.dustbin[:] = [item for item in self.dustbin if item['id'] != vlob]
-                self.entries[path] = entry  # TODO recreate subdirs if deleted since deletion
-                return True
+                self.entries[path] = entry
+                directory = os.path.dirname(path)
+                await self.make_dir(directory, parents=True)
+                return
         raise UserManifestNotFound('Vlob not found.')
 
     async def reencrypt_file(self, path):
+        path = '/' + path.strip('/')
         try:
             entry = self.entries[path]
         except KeyError:
@@ -370,6 +388,7 @@ class Manifest(object):
         self.entries[path] = new_vlob
 
     async def list_dir(self, path, children=True):
+        path = '/' + path.strip('/')
         if path != '/' and path not in self.entries:
             raise UserManifestNotFound('Directory or file not found.')
         if not children:
@@ -377,12 +396,22 @@ class Manifest(object):
         results = {}
         for entry in self.entries:
             if entry != path and entry.startswith(path) and entry.count('/', len(path) + 1) == 0:
-                results[entry.split('/')[-1]] = self.entries[entry]
+                results[os.path.basename(entry)] = self.entries[entry]
         return results
 
-    async def make_dir(self, path):
+    async def make_dir(self, path, parents=False):
+        path = '/' + path.strip('/')
         if path in self.entries:
-            raise UserManifestError('already_exists', 'Directory already exists.')
+            if parents:
+                return self.entries[path]
+            else:
+                raise UserManifestError('already_exists', 'Directory already exists.')
+        parent_directory = os.path.dirname(path)
+        if parent_directory not in self.entries:
+            if parents:
+                await self.make_dir(parent_directory, parents=True)
+            else:
+                raise UserManifestNotFound("Parent directory doesn't exists.")
         self.entries[path] = {'id': None,
                               'read_trust_seed': None,
                               'write_trust_seed': None,
@@ -390,6 +419,7 @@ class Manifest(object):
         return self.entries[path]
 
     async def remove_dir(self, path):
+        path = '/' + path.strip('/')
         if path == '/':
             raise UserManifestError('cannot_remove_root', 'Cannot remove root directory.')
         for entry, vlob in self.entries.items():
@@ -405,6 +435,8 @@ class Manifest(object):
     async def show_dustbin(self, path=None):
         if not path:
             return self.dustbin
+        else:
+            path = '/' + path.strip('/')
         results = [entry for entry in self.dustbin if entry['path'] == path]
         if not results:
             raise UserManifestNotFound('Path not found.')
@@ -821,9 +853,9 @@ class UserManifestService(BaseUserManifestService):
         children = await manifest.list_dir(path, children=True)
         return directory, children
 
-    async def make_dir(self, path, group=None):
+    async def make_dir(self, path, parents=False, group=None):
         manifest = await self.get_manifest(group)
-        await manifest.make_dir(path)
+        await manifest.make_dir(path, parents)
         await manifest.save()
 
     async def remove_dir(self, path, group=None):

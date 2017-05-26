@@ -6,8 +6,9 @@ from datetime import datetime
 from marshmallow import fields
 import os
 
-from parsec.core.crypto_service import CryptoError
 from parsec.backend.vlob_service import VlobNotFound
+from parsec.crypto import AESCipher
+from parsec.crypto.base import SymCryptoError
 from parsec.service import BaseService, service, cmd
 from parsec.exceptions import ParsecError
 from parsec.tools import BaseCmdSchema, event_handler
@@ -454,8 +455,9 @@ class Manifest():
                 encrypted_blob = vlob['blob']
                 encrypted_blob = decodebytes(encrypted_blob.encode())
                 key = decodebytes(entry['key'].encode()) if entry['key'] else None
-                await self.service.crypto_service.sym_decrypt(encrypted_blob, key)
-            except (VlobNotFound, CryptoError):
+                encryptor = AESCipher()
+                await encryptor.decrypt(key, encrypted_blob)
+            except (VlobNotFound, SymCryptoError):
                 return False
         return True
 
@@ -478,13 +480,14 @@ class GroupManifest(Manifest):
                                'write_trust_seed': None}}
         empty_manifest = {'entries': empty_entries, 'dustbin': [], 'versions': {}}
         # Old manifest
+        encryptor = AESCipher()
         if old_version and old_version > 0:
             old_vlob = await self.service.backend_api_service.vlob_read(
                 id=self.id,
                 trust_seed=self.read_trust_seed,
                 version=old_version)
             key = decodebytes(self.key.encode())
-            content = await self.service.crypto_service.sym_decrypt(old_vlob['blob'], key)
+            content = await encryptor.decrypt(key, old_vlob['blob'])
             old_manifest = json.loads(content.decode())
         elif old_version == 0:
             old_manifest = empty_manifest
@@ -497,7 +500,7 @@ class GroupManifest(Manifest):
                 trust_seed=self.read_trust_seed,
                 version=new_version)
             key = decodebytes(self.key.encode())
-            content = await self.service.crypto_service.sym_decrypt(new_vlob['blob'], key)
+            content = await encryptor.decrypt(key, new_vlob['blob'])
             new_manifest = json.loads(content.decode())
         elif new_version == 0:
             new_manifest = empty_manifest
@@ -518,7 +521,8 @@ class GroupManifest(Manifest):
         except VlobNotFound:
             raise UserManifestNotFound('Group manifest not found.')
         key = decodebytes(self.key.encode())
-        content = await self.service.crypto_service.sym_decrypt(vlob['blob'], key)
+        encryptor = AESCipher()
+        content = await encryptor.decrypt(key, vlob['blob'])
         if not reset and vlob['version'] <= self.version:
             return
         new_manifest = json.loads(content.decode())
@@ -544,7 +548,8 @@ class GroupManifest(Manifest):
             key = key = decodebytes(self.key.encode())
         else:
             key = None
-        key, encrypted_blob = await self.service.crypto_service.sym_encrypt(blob.encode(), key)
+        encryptor = AESCipher()
+        key, encrypted_blob = await encryptor.encrypt(key, blob.encode())
         self.version += 1
         if self.id:
             await self.service.backend_api_service.vlob_update(
@@ -575,7 +580,8 @@ class GroupManifest(Manifest):
             self.dustbin[index] = new_vlob
         # Reencrypt manifest
         blob = await self.dumps()
-        key, encrypted_blob = await self.service.crypto_service.sym_encrypt(blob.encode())
+        encryptor = AESCipher()
+        key, encrypted_blob = await encryptor.encrypt(blob.encode())
         new_vlob = await self.service.backend_api_service.vlob_create(blob=encrypted_blob.decode())
         self.id = new_vlob['id']
         self.key = encodebytes(key).decode()
@@ -770,6 +776,7 @@ class UserManifest(Manifest):
     async def check_consistency(self, manifest):
         if await super().check_consistency(manifest) is False:
             return False
+        encryptor = AESCipher()
         for group_manifest in self.group_manifests.values():
             entry = await group_manifest.get_vlob()
             try:
@@ -778,8 +785,8 @@ class UserManifest(Manifest):
                     trust_seed=entry['read_trust_seed'])
                 encrypted_blob = vlob['blob']
                 key = decodebytes(entry['key'].encode()) if entry['key'] else None
-                await self.service.crypto_service.sym_decrypt(encrypted_blob, key)
-            except (VlobNotFound, CryptoError):
+                await encryptor.decrypt(key, encrypted_blob)
+            except (VlobNotFound, SymCryptoError):
                 return False
         return True
 

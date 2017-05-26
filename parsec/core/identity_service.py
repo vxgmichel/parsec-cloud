@@ -2,7 +2,8 @@ from functools import partial
 
 from marshmallow import fields
 
-from parsec.service import BaseService, cmd, service
+from parsec.crypto import RSACipher
+from parsec.service import BaseService, cmd
 from parsec.exceptions import ParsecError
 from parsec.tools import BaseCmdSchema, event_handler
 
@@ -86,7 +87,6 @@ class IdentityService(BaseIdentityService):
         self.handlers = []
 
     async def load_identity(self, identity=None):
-
         if identity:
             if await self.crypto_service.identity_exists(identity, secret=True):
                 self.identity = identity
@@ -113,16 +113,18 @@ class IdentityService(BaseIdentityService):
         return self.identity
 
     async def encrypt(self, data, recipient=None):
+        encryptor = RSACipher()
         if not self.identity:
             raise IdentityNotFound('No identity loaded.')
         if not recipient:
             recipient = await self.get_identity()
-        return await self.crypto_service.asym_encrypt(data, recipient)
+        return await encryptor.encrypt(recipient, data)
 
     async def decrypt(self, data):
         if not self.identity:
             raise IdentityNotFound('No identity loaded.')
-        return await self.crypto_service.asym_decrypt(data)
+        encryptor = RSACipher()
+        return await encryptor.decrypt(data)
 
     # async def compute_sign_challenge(self):
     #     identity = await self.get_identity()
@@ -131,7 +133,8 @@ class IdentityService(BaseIdentityService):
     #         raise IdentityError('Cannot get sign challenge.')
     #     # TODO should be decrypted by vblob service public key?
     #     encrypted_challenge = response['challenge']
-    #     challenge = await self.crypto_service.asym_decrypt(encrypted_challenge)
+    #     encryptor = RSACipher()
+    #     challenge = await encryptor.decrypt(encrypted_challenge)
     #     return identity, challenge
 
     # async def compute_seed_challenge(self, id, trust_seed):

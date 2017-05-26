@@ -2,6 +2,7 @@ import json
 
 from marshmallow import fields
 
+from parsec.crypto import RSACipher
 from parsec.service import BaseService, cmd, service
 from parsec.exceptions import ParsecError
 from parsec.tools import BaseCmdSchema
@@ -127,7 +128,8 @@ class ShareService(BaseShareService):
     async def share_with_identity(self, path, identity):
         vlob = await self.user_manifest_service.get_properties(path=path)
         # TODO use pub key service ?
-        encrypted_vlob = await self.crypto_service.asym_encrypt(json.dumps(vlob), identity)
+        encryptor = RSACipher()
+        encrypted_vlob = await encryptor.encrypt(json.dumps(vlob), identity)
         await self.backend_api_service.message_new(identity, encrypted_vlob.decode())
 
     async def share_with_group(self, path, group):
@@ -164,9 +166,10 @@ class ShareService(BaseShareService):
         await self.backend_api_service.group_add_identities(name, identities, admin)
         vlob = await self.user_manifest_service.get_properties(group=name)
         message = {'group': name, 'vlob': vlob}
+        encryptor = RSACipher()
         for identity in identities:
             # TODO use pub key service ?
-            encrypted_msg = await self.crypto_service.asym_encrypt(json.dumps(message), identity)
+            encrypted_msg = await encryptor.encrypt(json.dumps(message), identity)
             await self.backend_api_service.message_new(identity, encrypted_msg.decode())
 
     async def group_remove_identities(self, name, identities, admin=False):
@@ -177,6 +180,7 @@ class ShareService(BaseShareService):
         await self.user_manifest_service.reencrypt_group_manifest(name)
         vlob = await self.user_manifest_service.get_properties(group=name)
         message = {'group': name, 'vlob': vlob}
+        encryptor = RSACipher()
         for identity in [identity for identity in old_identities if identity not in identities]:
-            encrypted_msg = await self.crypto_service.asym_encrypt(json.dumps(message), identity)
+            encrypted_msg = await encryptor.encrypt(json.dumps(message), identity)
             await self.backend_api_service.message_new(identity, encrypted_msg.decode())

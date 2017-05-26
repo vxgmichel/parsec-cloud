@@ -7,6 +7,7 @@ from cryptography.hazmat.primitives import hashes
 from marshmallow import fields
 
 from parsec.core.user_manifest_service import UserManifestNotFound
+from parsec.crypto import AESCipher
 from parsec.service import BaseService, cmd, service
 from parsec.exceptions import ParsecError
 from parsec.tools import BaseCmdSchema
@@ -158,7 +159,8 @@ class FileService(BaseFileService):
         # Encrypt blob
         blob = json.dumps(blob)
         blob = blob.encode()
-        blob_key, encrypted_blob = await self.crypto_service.sym_encrypt(blob)
+        encryptor = AESCipher()
+        blob_key, encrypted_blob = encryptor.encrypt(blob)
         encrypted_blob = encodebytes(encrypted_blob).decode()
         ret = await self.backend_api_service.vlob_create(encrypted_blob)
         del ret['status']
@@ -178,7 +180,8 @@ class FileService(BaseFileService):
         blob = vlob['blob']
         encrypted_blob = decodebytes(blob.encode())
         blob_key = decodebytes(properties['key'].encode())
-        blob = await self.crypto_service.sym_decrypt(encrypted_blob, blob_key)
+        encryptor = AESCipher()
+        blob = await encryptor.decrypt(blob_key, encrypted_blob)
         blob = json.loads(blob.decode())
         # Get content
         matching_blocks = await self._find_matching_blocks(id, version, size, offset)
@@ -190,8 +193,7 @@ class FileService(BaseFileService):
             for block_properties in blocks_and_key['blocks']:
                 block = await self.block_service.read(id=block_properties['block'])
                 # Decrypt
-                chunk_content = await self.crypto_service.sym_decrypt(block['content'].encode(),
-                                                                      block_key)
+                chunk_content = await encryptor.decrypt(block_key, block['content'].encode())
                 chunk_content = decodebytes(chunk_content)
                 # Check integrity
                 digest = hashes.Hash(hashes.SHA512(), backend=openssl)
@@ -224,7 +226,8 @@ class FileService(BaseFileService):
         blob += matching_blocks['post_excluded_blocks']
         blob = json.dumps(blob)
         blob = blob.encode()
-        _, encrypted_blob = await self.crypto_service.sym_encrypt(blob, blob_key)
+        encryptor = AESCipher()
+        _, encrypted_blob = await encryptor.decrypt(blob, blob_key)
         encrypted_blob = encodebytes(encrypted_blob).decode()
         await self.backend_api_service.vlob_update(
             id=id, version=version, blob=encrypted_blob, trust_seed=properties['write_trust_seed'])
@@ -244,7 +247,8 @@ class FileService(BaseFileService):
         blob.append(await self._build_file_blocks(matching_blocks['post_included_content']))
         blob = json.dumps(blob)
         blob = blob.encode()
-        _, encrypted_blob = await self.crypto_service.sym_encrypt(blob, blob_key)
+        encryptor = AESCipher()
+        _, encrypted_blob = await encryptor.encrypt(blob_key, blob)
         encrypted_blob = encodebytes(encrypted_blob).decode()
         await self.backend_api_service.vlob_update(
             id=id, version=version, blob=encrypted_blob, trust_seed=properties['write_trust_seed'])
@@ -261,7 +265,8 @@ class FileService(BaseFileService):
         encrypted_blob = vlob['blob']
         encrypted_blob = decodebytes(encrypted_blob.encode())
         key = decodebytes(properties['key'].encode())
-        blob = await self.crypto_service.sym_decrypt(encrypted_blob, key)
+        encryptor = AESCipher()
+        blob = await encryptor.decrypt(key, encrypted_blob)
         blob = json.loads(blob.decode())
         # TODO which block index? Or add timestamp in vlob_service ?
         stat = await self.block_service.stat(id=blob[-1]['blocks'][-1]['block'])
@@ -330,8 +335,9 @@ class FileService(BaseFileService):
         old_blob = old_vlob['blob']
         old_encrypted_blob = decodebytes(old_blob.encode())
         old_blob_key = decodebytes(properties['key'].encode())
-        new_blob = await self.crypto_service.sym_decrypt(old_encrypted_blob, old_blob_key)
-        new_key, new_encrypted_blob = await self.crypto_service.sym_encrypt(new_blob)
+        encryptor = AESCipher()
+        new_blob = await encryptor.decrypt(old_blob_key, old_encrypted_blob)
+        new_key, new_encrypted_blob = await encryptor.encrypt(new_blob)
         new_encrypted_blob = encodebytes(new_encrypted_blob).decode()
         new_key = encodebytes(new_key).decode()
         new_vlob = await self.backend_api_service.vlob_create(new_encrypted_blob)
@@ -349,7 +355,8 @@ class FileService(BaseFileService):
         # Force a chunk even if the content is empty
         if not chunks:
             chunks = [b'']
-        block_key, _ = await self.crypto_service.sym_encrypt('')
+        encryptor = AESCipher()
+        block_key, _ = await encryptor.encrypt('')
         blocks = []
         for chunk in chunks:
             # Digest
@@ -359,7 +366,7 @@ class FileService(BaseFileService):
             chunk_digest = encodebytes(chunk_digest).decode()
             # Encrypt block
             encoded_chunk = encodebytes(chunk).decode()
-            _, cypher_chunk = await self.crypto_service.sym_encrypt(encoded_chunk, block_key)
+            _, cypher_chunk = await encryptor.encrypt(block_key, encoded_chunk)
             cypher_chunk = cypher_chunk.decode()
             # Store block
             block_id = await self.block_service.create(content=cypher_chunk)
@@ -388,7 +395,8 @@ class FileService(BaseFileService):
         blob = vlob['blob']
         encrypted_blob = decodebytes(blob.encode())
         blob_key = decodebytes(properties['key'].encode())
-        blob = await self.crypto_service.sym_decrypt(encrypted_blob, blob_key)
+        encryptor = AESCipher()
+        blob = await encryptor.decrypt(blob_key, encrypted_blob)
         blob = json.loads(blob.decode())
         pre_excluded_blocks = []
         included_blocks = []
@@ -411,9 +419,9 @@ class FileService(BaseFileService):
                 elif cursor > offset and cursor - block_properties['size'] < offset:
                     delta = cursor - offset
                     block = await self.block_service.read(block_properties['block'])
-                    block_content = await self.crypto_service.sym_decrypt(
-                        block['content'].encode(),
-                        decoded_block_key)
+                    block_content = await encryptor.decrypt(
+                        decoded_block_key,
+                        block['content'].encode())
                     block_content = decodebytes(block_content).decode()
                     pre_excluded_content = block_content[:-delta]
                     pre_included_content = block_content[-delta:][:size]
@@ -427,9 +435,9 @@ class FileService(BaseFileService):
                 elif cursor > offset + size and cursor - block_properties['size'] < offset + size:
                     delta = offset + size - (cursor - block_properties['size'])
                     block = await self.block_service.read(block_properties['block'])
-                    block_content = await self.crypto_service.sym_decrypt(
-                        block['content'].encode(),
-                        decoded_block_key)
+                    block_content = await encryptor.decrypt(
+                        decoded_block_key,
+                        block['content'].encode())
                     block_content = decodebytes(block_content).decode()
                     post_included_content = block_content[:delta]
                     post_excluded_content = block_content[delta:]

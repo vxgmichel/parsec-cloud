@@ -1,59 +1,12 @@
 from datetime import datetime
-import inspect
 from uuid import uuid4
 from marshmallow import fields
 
-from parsec.core.cache import cache
+from parsec.core.cache import cached_block
+from parsec.core.synchronizer import synchronized_block_read, synchronized_block_stat
 from parsec.service import BaseService, cmd
-from parsec.exceptions import ParsecError
+from parsec.exceptions import BlockError, BlockNotFound
 from parsec.tools import BaseCmdSchema, logger
-
-
-def cached(method):
-
-    def get_arg(arg, args, kwargs):
-        try:
-            return kwargs[arg]
-        except KeyError:
-            properties = inspect.getargspec(method)
-            arg_index = properties.args.index(arg)
-            try:
-                return args[arg_index]
-            except IndexError:
-                defaults_values = dict(zip(reversed(properties.args),
-                                           reversed(properties.defaults)))
-                return defaults_values[arg]
-
-    async def inner(*args, **kwargs):
-        method_name = method.__name__
-        response = None
-        if method_name == 'create':
-            content = get_arg('content', args, kwargs)
-            response = await method(*args, **kwargs)
-            timestamp = datetime.utcnow().timestamp()
-            cached_content = {'creation_timestamp': timestamp, 'status': 'ok'}
-            await cache.set('stat:' + response, cached_content)
-            cached_content['content'] = content
-            await cache.set('read:' + response, cached_content)
-        elif method_name in ['read', 'stat']:
-            id = get_arg('id', args, kwargs)
-            response = await cache.get((method_name, id))
-            if not response:
-                response = await method(*args, **kwargs)
-                await cache.set(method_name + ':' + id, response)
-        else:
-            response = await method(*args, **kwargs)
-        return response
-
-    return inner
-
-
-class BlockError(ParsecError):
-    status = 'block_error'
-
-
-class BlockNotFound(BlockError):
-    status = 'not_found'
 
 
 class cmd_CREATE_Schema(BaseCmdSchema):
@@ -105,27 +58,27 @@ class MockedBlockService(BaseBlockService):
         super().__init__()
         self._blocks = {}
 
-    @cached
+    @cached_block
     async def create(self, content, id=None):
         id = id if id else uuid4().hex  # TODO uuid4 or trust seed?
         timestamp = datetime.utcnow().timestamp()
         self._blocks[id] = {'content': content, 'creation_timestamp': timestamp}
         return id
 
-    @cached
+    @synchronized_block_read
+    @cached_block
     async def read(self, id):
         try:
             response = self._blocks[id]
-            response['status'] = 'ok'
         except KeyError:
             raise BlockNotFound('Block not found.')
         return response
 
-    @cached
+    @synchronized_block_stat
+    @cached_block
     async def stat(self, id):
         try:
-            response = {'creation_timestamp': self._blocks[id]['creation_timestamp'],
-                        'status': 'ok'}
+            response = {'creation_timestamp': self._blocks[id]['creation_timestamp']}
         except KeyError:
             raise BlockNotFound('Block not found.')
         return response
@@ -155,15 +108,17 @@ class MetaBlockService(BaseBlockService):
             raise BlockError('All backends failed to complete %s operation.' % operation)
         return result
 
-    @cached
+    @cached_block
     async def create(self, content, id=None):
         id = id if id else uuid4().hex  # TODO uuid4 or trust seed?
         return await self._do_operation('create', content, id)
 
-    @cached
+    @synchronized_block_read
+    @cached_block
     async def read(self, id):
         return await self._do_operation('read', id)
 
-    @cached
+    @synchronized_block_stat
+    @cached_block
     async def stat(self, id):
         return await self._do_operation('stat', id)

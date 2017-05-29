@@ -8,7 +8,7 @@ from parsec.service import BaseService, cmd
 from parsec.session import AuthSession, ConnectionClosed
 from parsec.exceptions import PubKeyError, PubKeyNotFound, HandshakeError
 from parsec.tools import BaseCmdSchema, UnknownCheckedSchema, from_jsonb64
-from parsec.crypto import load_public_key
+from parsec.crypto import RSACipher
 
 
 class HandshakeAnswerSchema(UnknownCheckedSchema):
@@ -20,7 +20,7 @@ class HandshakeAnswerSchema(UnknownCheckedSchema):
 def _generate_challenge():
     # Use SystemRandom to get cryptographically secure seeds
     return ''.join(random.SystemRandom().choice(string.ascii_uppercase + string.digits)
-                        for _ in range(12))
+                   for _ in range(12))
 
 
 class cmd_PUBKEY_GET_Schema(BaseCmdSchema):
@@ -60,7 +60,7 @@ class BasePubKeyService(BaseService):
             try:
                 answer = from_jsonb64(resp['answer'])
                 pubkey = await self.get_pubkey(claimed_identity)
-                pubkey.verify(answer, challenge.encode())
+                pubkey.verify(challenge.encode(), answer)
                 await context.send('{"status": "ok", "handshake": "done"}')
                 return AuthSession(context, claimed_identity)
             except (TypeError, PubKeyNotFound, InvalidSignature):
@@ -85,6 +85,6 @@ class InMemoryPubKeyService(BasePubKeyService):
     async def get_pubkey(self, id, raw=False):
         try:
             key = self._keys[id]
-            return key if raw else load_public_key(key)
+            return key if raw else RSACipher(key_pem=key, public_key=True)
         except KeyError:
             raise PubKeyNotFound('No public key for identity `%s`' % id)

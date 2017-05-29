@@ -1,7 +1,8 @@
 import pytest
 
 from os import urandom
-from parsec.crypto import SymCryptoError, AESCipher
+from parsec.crypto import AESCipher
+from parsec.exceptions import SymCryptoError
 
 
 class TestUnitCryptoAES:

@@ -4,7 +4,7 @@ from string import hexdigits
 from random import sample
 
 from parsec.crypto.abstract import BaseSymCipher, BaseAsymCipher
-from parsec.crypto.base import AsymCryptoError, SymCryptoError
+from parsec.exceptions import AsymCryptoError, SymCryptoError
 
 
 class MockSymCipher(BaseSymCipher):

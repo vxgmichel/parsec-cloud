@@ -8,8 +8,9 @@ from functools import partial
 from datetime import datetime
 from marshmallow import fields
 
-from parsec.service import cmd
-from parsec.core.block_service import BaseBlockService, BlockNotFound, BlockError, cached
+from parsec.core.cache import cached_block
+from parsec.core.synchronizer import synchronized_block_read, synchronized_block_stat
+from parsec.core.block_service import BaseBlockService, BlockNotFound, BlockError
 from parsec.tools import BaseCmdSchema
 
 
@@ -22,25 +23,22 @@ class cmd_INIT_Schema(BaseCmdSchema):
 
 class S3BlockService(BaseBlockService):
 
-    def __init__(self):
+    def __init__(self, s3_region, s3_bucket, s3_key, s3_secret):
         super().__init__()
         self._s3 = None
-        self._s3_bucket = None
-
-    @cmd('block_init')
-    async def _cmd_INIT(self, session, msg):
-        msg = cmd_INIT_Schema().load(msg)
-        self.init(**msg)
-        return {'status': 'ok'}
-
-    def init(self, s3_region, s3_bucket, s3_key, s3_secret):
-        self._s3 = boto3.client('s3',
-                                region_name=s3_region,
-                                aws_access_key_id=s3_key,
-                                aws_secret_access_key=s3_secret)
+        self._s3_region = s3_region
         self._s3_bucket = s3_bucket
+        self._s3_key = s3_key
+        self._s3_secret = s3_secret
 
-    @cached
+    async def bootstrap(self):
+        assert not self._s3, 'Service already bootstrapped'
+        self._s3 = boto3.client(
+            's3', region_name=self._s3_region, aws_access_key_id=self._s3_key,
+            aws_secret_access_key=self._s3_secret
+        )
+
+    @cached_block
     async def create(self, content, id=None):
         if not self._s3:
             raise BlockError('S3 block service is not initialized')
@@ -57,7 +55,8 @@ class S3BlockService(BaseBlockService):
             raise BlockError(str(exc))
         return id
 
-    @cached
+    @synchronized_block_read
+    @cached_block
     async def read(self, id):
         if not self._s3:
             raise BlockError('S3 block service is not initialized')
@@ -68,11 +67,11 @@ class S3BlockService(BaseBlockService):
             raise BlockNotFound(str(exc))
         return {
             'content': obj['Body'].read().decode(),
-            'creation_timestamp': float(obj['Metadata']['created']),
-            'status': 'ok'
+            'creation_timestamp': float(obj['Metadata']['created'])
         }
 
-    @cached
+    @synchronized_block_stat
+    @cached_block
     async def stat(self, id):
         if not self._s3:
             raise BlockError('S3 block service is not initialized')
@@ -81,4 +80,4 @@ class S3BlockService(BaseBlockService):
             obj = await get_event_loop().run_in_executor(None, func)
         except (S3ClientError, S3EndpointConnectionError) as exc:
             raise BlockNotFound(str(exc))
-        return {'creation_timestamp': float(obj['Metadata']['created']), 'status': 'ok'}
+        return {'creation_timestamp': float(obj['Metadata']['created'])}

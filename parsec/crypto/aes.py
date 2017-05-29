@@ -6,15 +6,16 @@ from cryptography.hazmat.primitives.ciphers import Cipher
 from cryptography.exceptions import InvalidTag
 
 from parsec.crypto.abstract import BaseSymCipher
-from parsec.crypto.base import SymCryptoError
+from parsec.exceptions import SymCryptoError
 
 
 class AESCipher(BaseSymCipher):
     KEY_SIZE = 32  # 256 bits long key
 
-    def encrypt(self, cleartext: bytes):
+    def encrypt(self, cleartext: bytes, key=None):
         # Generate key for AES encryption
-        key = urandom(self.KEY_SIZE)
+        if not key:
+            key = urandom(self.KEY_SIZE)
 
         # No need for padding as we are using GCM
         # Get a new iv for GCM

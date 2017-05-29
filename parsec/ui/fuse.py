@@ -27,55 +27,9 @@ def cli(mountpoint, debug, nothreads, socket):
     start_fuse(socket, mountpoint, debug=debug, nothreads=nothreads)
 
 
-class File:
-
-    def __init__(self, operations, id, version, flags=0):
-        self.id = id
-        self.version = version
-        self._operations = operations
-        self.flags = flags
-
-    def read(self, size=None, offset=0):
-        # TODO use flags
-        response = self._operations.send_cmd(cmd='file_read',
-                                             id=self.id,
-                                             size=size,
-                                             offset=offset)
-        if response['status'] != 'ok':
-            raise FuseOSError(ENOENT)
-        self.version = response['version']
-        return decodebytes(response['content'].encode())
-
-    def write(self, data, offset=0):
-        # TODO use flags
-        self.version += 1
-        response = self._operations.send_cmd(
-            cmd='file_write',
-            id=self.id,
-            version=self.version,
-            content=encodebytes(data).decode(),
-            offset=offset)
-        if response['status'] != 'ok':
-            raise FuseOSError(ENOENT)
-
-    def truncate(self, length):
-        self.version += 1
-        response = self._operations.send_cmd(cmd='file_truncate',
-                                             id=self.id,
-                                             version=self.version,
-                                             length=length)
-        if response['status'] != 'ok':
-            raise FuseOSError(ENOENT)
-
-    def flush(self):
-        pass
-
-
 class FuseOperations(LoggingMixIn, Operations):
 
     def __init__(self, socket_path):
-        self.fds = {}
-        self.next_fd_id = 0
         self._socket_path = socket_path
         self._socket_lock = threading.Lock()
         self._socket = None
@@ -108,25 +62,12 @@ class FuseOperations(LoggingMixIn, Operations):
             logger.debug('Received: %r' % raw_reps)
             return json.loads(raw_reps[:-1].decode())
 
-    def _get_fd(self, fh):
-        try:
-            return self.fds[fh]
-        except KeyError:
-            raise FuseOSError(EBADFD)
-
-    def _get_file_id(self, path):
-        response = self.send_cmd(cmd='list_dir', path=path)
-        if response['status'] != 'ok':
-            raise FuseOSError(ENOENT)
-        return response['current']['id']
-
     def getattr(self, path, fh=None):
         response = self.send_cmd(cmd='path_info', path=path)
         if response['status'] != 'ok':
             raise FuseOSError(ENOENT)
-        id = response['current']['id']
-        if id:
-            response = self.send_cmd(cmd='file_stat', id=id)
+        if response['type'] == 'file':
+            response = self.send_cmd(cmd='file_stat', id=response['id'])
             if response['status'] != 'ok':
                 raise FuseOSError(ENOENT)
             stat = response
@@ -153,47 +94,41 @@ class FuseOperations(LoggingMixIn, Operations):
         return fuse_stat
 
     def readdir(self, path, fh):
-        response = self.send_cmd(cmd='user_manifest_list_dir', path=path)
+        response = self.send_cmd(cmd='path_info', path=path)
         if response['status'] != 'ok':
             raise FuseOSError(ENOENT)
-        return ['.', '..'] + list(response['children'].keys())
+        return ['.', '..'] + response['items']
 
     def create(self, path, mode):
-        response = self.send_cmd(cmd='user_manifest_create_file', path=path)
+        response = self.send_cmd(cmd='file_create', path=path)
         if response['status'] != 'ok':
             raise FuseOSError(ENOENT)
         return self.open(path)
 
     def open(self, path, flags=0):
-        fd_id = self.next_fd_id
-        id = self._get_file_id(path)
-        response = self.send_cmd(cmd='user_manifest_list_dir', path=path)
+        response = self.send_cmd(cmd='file_open', path=path)
         if response['status'] != 'ok':
             raise FuseOSError(ENOENT)
-        id = response['current']['id']
-        response = self.send_cmd(cmd='file_read', id=id)
-        if response['status'] != 'ok':
-            raise FuseOSError(ENOENT)
-        version = response['version']
-        file = File(self, id, version, flags)
-        self.fds[fd_id] = file
-        self.next_fd_id += 1
-        return fd_id
+        return response['fd']
 
     def release(self, path, fh):
-        try:
-            del self.fds[fh]
-        except KeyError:
+        response = self.send_cmd(cmd='file_close', fd=fh)
+        if response['status'] != 'ok':
             raise FuseOSError(EBADFD)
 
     def read(self, path, size, offset, fh):
-        fd = self._get_fd(fh)
-        return fd.read(size, offset)
+        response = self.send_cmd(cmd='file_read', fd=fh, size=size, offset=offset)
+        if response['status'] != 'ok':
+            raise FuseOSError(ENOENT)
+        return decodebytes(response['content'].encode())
 
     def write(self, path, data, offset, fh):
-        fd = self._get_fd(fh)
-        fd.write(data, offset)
-        return len(data)
+        length = len(data)
+        data = encodebytes(data).decode()
+        response = self.send_cmd(cmd='file_write', fd=fh, data=data, offset=offset)
+        if response['status'] != 'ok':
+            raise FuseOSError(ENOENT)
+        return length
 
     def truncate(self, path, length, fh=None):
         release_fh = False
@@ -201,34 +136,32 @@ class FuseOperations(LoggingMixIn, Operations):
             fh = self.open(path, flags=0)
             release_fh = True
         try:
-            fd = self._get_fd(fh)
-            fd.truncate(length)
-            for file in self.fds.values():
-                if file.id == fd.id and file.version < fd.version:
-                    file.version += 1
+            response = self.send_cmd(cmd='file_truncate', fd=fh, length=length)
+            if response['status'] != 'ok':
+                raise FuseOSError(ENOENT)
         finally:
             if release_fh:
                 self.release(path, fh)
 
     def unlink(self, path):
-        response = self.send_cmd(cmd='user_manifest_delete_file', path=path)
+        response = self.send_cmd(cmd='file_delete', path=path)
         if response['status'] != 'ok':
             raise FuseOSError(ENOENT)
 
     def mkdir(self, path, mode):
-        response = self.send_cmd(cmd='user_manifest_make_dir', path=path)
+        response = self.send_cmd(cmd='folder_create', path=path)
         if response['status'] != 'ok':
             raise FuseOSError(ENOENT)
         return 0
 
     def rmdir(self, path):
-        response = self.send_cmd(cmd='user_manifest_remove_dir', path=path)
+        response = self.send_cmd(cmd='folder_delete', path=path)
         if response['status'] != 'ok':
             raise FuseOSError(ENOENT)
         return 0
 
     def rename(self, old_path, new_path):
-        response = self.send_cmd(cmd='user_manifest_rename_file',
+        response = self.send_cmd(cmd='file_rename',
                                  old_path=old_path,
                                  new_path=new_path)
         if response['status'] != 'ok':
@@ -236,8 +169,7 @@ class FuseOperations(LoggingMixIn, Operations):
         return 0
 
     def flush(self, path, fh):
-        fd = self._get_fd(fh)
-        fd.flush()
+        # TODO flush file in core
         return 0
 
     def fsync(self, path, datasync, fh):

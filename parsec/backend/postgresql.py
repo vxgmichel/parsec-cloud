@@ -163,12 +163,15 @@ class PostgreSQLVlobService(BaseVlobService):
 
     _ON_UPDATED_NOTIFY_CMD = "NOTIFY %s, %%s;" % BaseVlobService.on_updated.name
 
-    async def create(self, id=None, blob=None):
-        atom = VlobAtom(id=id, blob=blob)
+    async def create(self, id=None, blob=None, read_trust_seed=None, write_trust_seed=None):
+        atom = VlobAtom(id=id,
+                        blob=blob,
+                        read_trust_seed=read_trust_seed,
+                        write_trust_seed=write_trust_seed)
         async with self.postgresql.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute("INSERT INTO vlobs VALUES (%s, 1, %s, %s, %s);",
-                    (atom.id, atom.read_trust_seed, atom.write_trust_seed, atom.blob))
+                                  (atom.id, atom.read_trust_seed, atom.write_trust_seed, atom.blob))
         return atom
 
     async def read(self, id, version=None, check_trust_seed=False):

@@ -1,7 +1,8 @@
 from binascii import hexlify, unhexlify
+from base64 import decodebytes, encodebytes
 
-from parsec.crypto.base import BaseCryptoService, CryptoError
 from parsec.crypto.abstract import BaseSymCipher, BaseAsymCipher
+from parsec.exceptions import CryptoError
 
 
 def _bytes_to_str(raw):
@@ -15,7 +16,7 @@ def _str_to_bytes(cooked):
         raise CryptoError('Invalid hex value `%s`' % cooked)
 
 
-class CryptoService(BaseCryptoService):
+class Crypto:
 
     def __init__(self, symetric: BaseSymCipher, asymetric: BaseAsymCipher):
         super().__init__()
@@ -36,7 +37,7 @@ class CryptoService(BaseCryptoService):
         key_sig = self._asym.sign(encrypted_key)
         return {
             'key': _bytes_to_str(encrypted_key),
-            'content': enc,
+            'content': encodebytes(enc).decode(),
             'signature': _bytes_to_str(signature),
             'key_signature': _bytes_to_str(key_sig)
         }
@@ -45,6 +46,7 @@ class CryptoService(BaseCryptoService):
         key = _str_to_bytes(key)
         key_signature = _str_to_bytes(key_signature)
         signature = _str_to_bytes(signature)
+        content = decodebytes(content.encode())
         # Check if the key and its signature match
         self._asym.verify(key, key_signature)
         # Decrypt the AES key

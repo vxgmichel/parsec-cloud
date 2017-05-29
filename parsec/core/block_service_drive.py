@@ -4,7 +4,9 @@ from dateutil import parser
 from pydrive.auth import GoogleAuth
 from pydrive.drive import GoogleDrive
 
-from parsec.core.block_service import BaseBlockService, BlockError, cached
+from parsec.core.cache import cached_block
+from parsec.core.synchronizer import synchronized_block_read, synchronized_block_stat
+from parsec.core.block_service import BaseBlockService, BlockError
 
 
 class GoogleDriveBlockService(BaseBlockService):
@@ -47,7 +49,7 @@ class GoogleDriveBlockService(BaseBlockService):
             raise BlockError(message)
         return self.drive.CreateFile({'id': file_list[0]['id']})
 
-    @cached
+    @cached_block
     async def create(self, content, id=None):
         id = id if id else uuid4().hex  # TODO uuid4 or trust seed?
         file = self.drive.CreateFile({'title': id,
@@ -56,7 +58,8 @@ class GoogleDriveBlockService(BaseBlockService):
         file.Upload()
         return id
 
-    @cached
+    @synchronized_block_read
+    @cached_block
     async def read(self, id):
         file = await self._get_file(id)
         file['lastViewedByMeDate'] = datetime.utcnow().isoformat()
@@ -64,7 +67,8 @@ class GoogleDriveBlockService(BaseBlockService):
         return {'content': file.GetContentString(),
                 'creation_timestamp': file['createdDate']}
 
-    @cached
+    @synchronized_block_stat
+    @cached_block
     async def stat(self, id):
         file = await self._get_file(id)
         return {'creation_timestamp': parser.parse(file['createdDate']).timestamp()}

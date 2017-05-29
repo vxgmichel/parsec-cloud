@@ -107,3 +107,35 @@ class BlockError(ParsecError):
 
 class BlockNotFound(BlockError):
     status = 'block_not_found'
+
+
+class FileError(ParsecError):
+    status = 'file_error'
+
+
+class FileNotFound(FileError):
+    status = 'file_not_found'
+
+
+class UserManifestError(ParsecError):
+    status = 'user_manifest_error'
+
+
+class UserManifestNotFound(UserManifestError):
+    status = 'user_manifest_not_found'
+
+
+class ShareError(ParsecError):
+    status = 'share_error'
+
+
+class CryptoError(ParsecError):
+    status = 'crypto_error'
+
+
+class SymCryptoError(ParsecError):
+    status = 'sym_crypto_error'
+
+
+class AsymCryptoError(ParsecError):
+    status = 'asym_crypto_error'

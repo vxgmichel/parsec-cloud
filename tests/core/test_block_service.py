@@ -57,8 +57,7 @@ class MockedS3Client:
 
 async def bootstrap_S3BlockService(request, event_loop):
     module = pytest.importorskip('parsec.core.block_service_s3')
-    svc = module.S3BlockService()
-    svc.init('region-1', 'parsec-test', '<dummy-s3-key>', '<dummy-s3-secret>')
+    svc = module.S3BlockService('region-1', 'parsec-test', '<dummy-s3-key>', '<dummy-s3-secret>')
     svc._s3 = MockedS3Client()
     return svc
 
@@ -141,34 +140,33 @@ class TestBlockServiceAPI:
     @freeze_time("2012-01-01")
     async def test_read(self, block_svc, block):
         block_id, block_content = block
-        await cache.delete(('read', block_id))
+        await cache.delete('read:' + block_id)
         # Block not found in cache
-        assert await cache.get(('read', block_id)) is None
+        assert await cache.get('read:' + block_id) is None
         # Read block
         with freeze_time('2012-01-01') as frozen_datetime:
             creation_timestamp = frozen_datetime().timestamp()
             frozen_datetime.tick()
             ret = await block_svc.dispatch_msg({'cmd': 'block_read', 'id': block_id})
-            assert {'status': 'ok',
+            assert {'content': block_content,
                     'creation_timestamp': creation_timestamp,
-                    'content': block_content} == ret
+                    'status': 'ok'} == ret
         # Check block in cache
-        response = await cache.get(('read', block_id))
+        response = await cache.get('read:' + block_id)
         assert response == {'content': 'Whatever.',
-                            'creation_timestamp': creation_timestamp,
-                            'status': 'ok'}
+                            'creation_timestamp': creation_timestamp}
         # Read using cache
         await cache.set(('read', block_id),
                         {'content': 'cached content',
                          'creation_timestamp': creation_timestamp,
                          'status': 'ok'})
         ret = await block_svc.dispatch_msg({'cmd': 'block_read', 'id': block_id})
-        assert {'status': 'ok',
-                'creation_timestamp': creation_timestamp,
-                'content': 'cached content'} == ret
+        assert {'creation_timestamp': creation_timestamp,
+                'content': 'cached content',
+                'status': 'ok'} == ret
         # Unknown block
         ret = await block_svc.dispatch_msg({'cmd': 'block_read', 'id': 'unknown'})
-        assert ret['status'] == 'not_found' or ret['status'] == 'block_error'  # TODO ok?
+        assert ret['status'] == 'block_not_found' or ret['status'] == 'block_error'  # TODO ok?
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize('bad_msg', [
@@ -188,17 +186,17 @@ class TestBlockServiceAPI:
     async def test_stat(self, block_svc, block):
         block_id, block_content = block
         # Block not found in cache
-        await cache.delete(('stat', block_id))
-        assert await cache.get(('stat', block_id)) is None
+        await cache.delete('stat:' + block_id)
+        assert await cache.get('stat:' + block_id) is None
         # Stat block
         with freeze_time('2012-01-01') as frozen_datetime:
             creation_timestamp = frozen_datetime().timestamp()
             ret = await block_svc.dispatch_msg({'cmd': 'block_stat', 'id': block_id})
-            assert {'status': 'ok',
-                    'creation_timestamp': creation_timestamp} == ret
+            assert {'creation_timestamp': creation_timestamp,
+                    'status': 'ok'} == ret
         # Check block in cache
-        response = await cache.get(('stat', block_id))
-        assert response == {'creation_timestamp': creation_timestamp, 'status': 'ok'}
+        response = await cache.get('stat:' + block_id)
+        assert response == {'creation_timestamp': creation_timestamp}
         # Stat using cache
         new_timestamp = datetime.utcnow().timestamp()
         await cache.set(('stat', block_id),
@@ -209,7 +207,7 @@ class TestBlockServiceAPI:
                 'creation_timestamp': new_timestamp} == ret
         # Unknown block
         ret = await block_svc.dispatch_msg({'cmd': 'block_stat', 'id': 'unknown'})
-        assert ret['status'] == 'not_found' or ret['status'] == 'block_error'  # TODO ok?
+        assert ret['status'] == 'block_not_found' or ret['status'] == 'block_error'  # TODO ok?
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize('bad_msg', [

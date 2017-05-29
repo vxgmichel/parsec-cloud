@@ -3,13 +3,9 @@ import json
 from marshmallow import fields
 
 from parsec.crypto import RSACipher
-from parsec.service import BaseService, cmd, service
-from parsec.exceptions import ParsecError
+from parsec.exceptions import ShareError
+from parsec.service import BaseService, cmd
 from parsec.tools import BaseCmdSchema
-
-
-class ShareError(ParsecError):
-    pass
 
 
 class cmd_SHARE_WITH_IDENTITY_Schema(BaseCmdSchema):
@@ -46,9 +42,7 @@ class cmd_GROUP_REMOVE_IDENTITIES_Schema(BaseCmdSchema):
     admin = fields.Boolean(missing=False)
 
 
-class BaseShareService(BaseService):
-
-    name = 'ShareService'
+class ShareAPIMixin(BaseService):
 
     @cmd('share_with_identity')
     async def _cmd_SHARE_WITH_IDENTITY(self, session, msg):
@@ -93,94 +87,61 @@ class BaseShareService(BaseService):
         return {'status': 'ok'}
 
     async def share_with_identity(self, path, identity):
-        raise NotImplementedError()
-
-    async def share_with_group(self, path, group):
-        raise NotImplementedError()
-
-    async def stop_share(self, path):
-        raise NotImplementedError()
-
-    async def group_create(self, name):
-        raise NotImplementedError()
-
-    async def group_read(self, name):
-        raise NotImplementedError()
-
-    async def group_add_identities(self, name, identities, admin=False):
-        raise NotImplementedError()
-
-    async def group_remove_identities(self, name, identities, admin=False):
-        raise NotImplementedError()
-
-
-class ShareService(BaseShareService):
-
-    backend_api_service = service('BackendAPIService')
-    crypto_service = service('CryptoService')
-    identity_service = service('IdentityService')
-    pub_keys_service = service('PubKeysService')
-    user_manifest_service = service('UserManifestService')
-
-    def __init__(self):
-        super().__init__()
-
-    async def share_with_identity(self, path, identity):
-        vlob = await self.user_manifest_service.get_properties(path=path)
+        vlob = await self.get_properties(path=path)
         # TODO use pub key service ?
         encryptor = RSACipher()
         encrypted_vlob = await encryptor.encrypt(json.dumps(vlob), identity)
-        await self.backend_api_service.message_new(identity, encrypted_vlob.decode())
+        await self.backend.message_new(identity, encrypted_vlob.decode())
 
     async def share_with_group(self, path, group):
-        group = await self.backend_api_service.group_read(group)
+        group = await self.backend.group_read(group)
         for identity in group['users']:
             await self.share_with_identity(path, identity)  # TODO bug everyone notified
 
     async def share_stop(self, path):
-        user_manifest = await self.user_manifest_service.get_manifest()
-        await user_manifest.reencrypt_file(path)
+        core = await self.get_manifest()
+        await core.reencrypt_file(path)
 
     async def import_shared_vlob(self):
-        identity = await self.identity_service.get_identity()
-        messages = await self.backend_api_service.message_get(identity)  # TODO get last
+        identity = await self.identity.get_identity()
+        messages = await self.backend.message_get(identity)  # TODO get last
         if not messages:
             raise ShareError('No shared vlob in messages queue.')
-        message = await self.identity_service.decrypt(messages[-1])
+        message = await self.identity.decrypt(messages[-1])
         message = json.loads(message.decode())
         if 'group' in message and not isinstance(message['group'], dict):  # TODO message format?
-            await self.user_manifest_service.import_group_vlob(message['group'], message['vlob'])
+            await self.import_group_vlob(message['group'], message['vlob'])
         else:
             path = '/share-' + message['id']
-            await self.user_manifest_service.import_file_vlob(path, message)
+            await self.import_file_vlob(path, message)
 
     async def group_create(self, name):
-        await self.backend_api_service.group_create(name)
-        await self.user_manifest_service.create_group_manifest(name)
+        await self.backend.group_create(name)
+        await self.create_group_manifest(name)
 
     async def group_read(self, name):
-        return await self.backend_api_service.group_read(name)
+        return await self.backend.group_read(name)
 
     async def group_add_identities(self, name, identities, admin=False):
         # TODO check admin
-        await self.backend_api_service.group_add_identities(name, identities, admin)
-        vlob = await self.user_manifest_service.get_properties(group=name)
+        await self.backend.group_add_identities(name, identities, admin)
+        vlob = await self.get_properties(group=name)
         message = {'group': name, 'vlob': vlob}
         encryptor = RSACipher()
         for identity in identities:
             # TODO use pub key service ?
             encrypted_msg = await encryptor.encrypt(json.dumps(message), identity)
-            await self.backend_api_service.message_new(identity, encrypted_msg.decode())
+            await self.backend.message_new(identity, encrypted_msg.decode())
 
     async def group_remove_identities(self, name, identities, admin=False):
         # TODO check admin
-        group = await self.backend_api_service.group_read(name)
+        group = await self.backend.group_read(name)
         old_identities = group['admins'] if admin else group['users']
-        await self.backend_api_service.group_remove_identities(name, identities, admin)
-        await self.user_manifest_service.reencrypt_group_manifest(name)
-        vlob = await self.user_manifest_service.get_properties(group=name)
+        await self.backend.group_remove_identities(name, identities, admin)
+        await self.reencrypt_group_manifest(name)
+        vlob = await self.get_properties(group=name)
         message = {'group': name, 'vlob': vlob}
         encryptor = RSACipher()
         for identity in [identity for identity in old_identities if identity not in identities]:
             encrypted_msg = await encryptor.encrypt(json.dumps(message), identity)
-            await self.backend_api_service.message_new(identity, encrypted_msg.decode())
+            await self.backend.message_new(identity, encrypted_msg.decode())

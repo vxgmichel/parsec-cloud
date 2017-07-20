@@ -1,3 +1,8 @@
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.backends import default_backend
+from io import BytesIO
+import json
 from os import environ
 import pdb
 import sys
@@ -17,6 +22,7 @@ from parsec.core import app_factory, run_app
 from parsec.core.backend import BackendComponent
 from parsec.core.identity import IdentityComponent
 from parsec.core.fs import FSComponent
+from parsec.core.privkey import EPrivkeyLoad
 from parsec.core.privkey import PrivKeyComponent
 from parsec.core.synchronizer import SynchronizerComponent
 from parsec.core.block import in_memory_block_dispatcher_factory, s3_block_dispatcher_factory
@@ -112,6 +118,46 @@ def run_with_pdb(cmd, *args, **kwargs):
         print("Post mortem debugger finished.")
 
 
+@click.command(name='add-privkey')
+@click.option('socket_path', '--socket', '-s', default=DEFAULT_CORE_UNIX_SOCKET,
+              help='Path to the UNIX socket (default: %s).' % DEFAULT_CORE_UNIX_SOCKET)
+@click.argument('identity')
+@click.argument('password')
+@click.argument('keyfile', type=click.File())
+def add_privkey(socket_path, identity, password, keyfile):
+
+    async def _send_cmd(socket_path, msg):
+        reader, writer = await asyncio.open_unix_connection(path=socket_path)
+        writer.write(msg.encode())
+        writer.write(b'\n')
+        raw_resp = await reader.readline()
+        resp = json.loads(raw_resp.decode())
+        if resp != {'status': 'ok'}:
+            raise SystemExit('%s' % resp['label'])
+        writer.close()
+
+    msg = {'cmd': 'privkey_add',
+           'id': identity,
+           'key': keyfile.read(),
+           'password': password}
+    msg = json.dumps(msg)
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(_send_cmd(socket_path, msg))
+
+
+@click.command(name='gen-privkey')
+@click.argument('output_keyfile', type=click.File('wb'))
+def gen_privkey(output_keyfile):
+    key = rsa.generate_private_key(backend=default_backend(),
+                                   public_exponent=65537,
+                                   key_size=2048)
+    pem = key.private_bytes(encoding=serialization.Encoding.PEM,
+                            format=serialization.PrivateFormat.TraditionalOpenSSL,
+                            encryption_algorithm=serialization.NoEncryption())
+    identity_key = BytesIO(pem)
+    output_keyfile.write(identity_key.read())
+
+
 @click.command()
 @click.option('--socket', '-s', default=DEFAULT_CORE_UNIX_SOCKET,
               help='Path to the UNIX socket exposing the core API (default: %s).' %
@@ -122,7 +168,7 @@ def run_with_pdb(cmd, *args, **kwargs):
 @click.option('--debug', '-d', is_flag=True)
 @click.option('--pdb', is_flag=True)
 @click.option('--identity', '-i', default=None)
-@click.option('--identity-key', '-I', type=click.File('rb'), default=None)
+@click.option('--password', '-p', default=None)
 @click.option('--I-am-John', is_flag=True, help='Log as dummy John Doe user')
 def core(**kwargs):
     if kwargs.pop('pdb'):
@@ -131,7 +177,7 @@ def core(**kwargs):
         return _core(**kwargs)
 
 
-def _core(socket, backend_host, backend_watchdog, block_store, debug, identity, identity_key, i_am_john):
+def _core(socket, backend_host, backend_watchdog, block_store, debug, identity, password, i_am_john):
     loop = asyncio.get_event_loop()
     if block_store:
         if block_store.startswith('s3:'):
@@ -162,22 +208,27 @@ def _core(socket, backend_host, backend_watchdog, block_store, debug, identity, 
         privkey_component.get_dispatcher(), backend_component.get_dispatcher(),
         fs_component.get_dispatcher(), synchronizer_component.get_dispatcher(),
         identity_component.get_dispatcher(), block_dispatcher)
-    if (identity or identity_key) and (not identity or not identity_key):
-        raise SystemExit('--identity and --identity-key params should be provided together.')
+    if (identity or password) and (not identity or not password):
+        raise SystemExit('--identity and --password params should be provided together.')
     # TODO: remove me once RSA key loading and backend handling are easier
     if i_am_john:
+        identity = JOHN_DOE_IDENTITY
+        password = 'secret'
+        from io import BytesIO
+        identity_key = BytesIO(JOHN_DOE_PRIVATE_KEY)
+
         @do
         def load_identity():
-            yield Effect(EIdentityLoad(JOHN_DOE_IDENTITY, JOHN_DOE_PRIVATE_KEY))
+            yield Effect(EIdentityLoad(identity, identity_key.read()))
             print('Welcome back M. Doe')
         loop.run_until_complete(app.async_perform(load_identity()))
     elif identity:
         @do
-        def load_identity():
+        def load_privkey():
             password = getpass()
-            yield Effect(EIdentityLoad(identity, identity_key.read(), password))
+            yield Effect(EPrivkeyLoad(identity, password))
             print('Connected as %s' % identity)
-        loop.run_until_complete(app.async_perform(load_identity()))
+        loop.run_until_complete(app.async_perform(load_privkey()))
     if debug:
         loop.set_debug(True)
     else:
@@ -248,6 +299,8 @@ def _backend(host, port, pubkeys, no_client_auth, store, debug):
 
 cli.add_command(cmd)
 cli.add_command(shell)
+cli.add_command(add_privkey)
+cli.add_command(gen_privkey)
 cli.add_command(core)
 cli.add_command(backend)
 

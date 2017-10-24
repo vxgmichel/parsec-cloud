@@ -1,82 +1,113 @@
-import attr
-from effect2 import ComposedDispatcher
-
-from parsec.base import base_dispatcher, EventComponent
-from parsec.backend.backend_api import register_backend_api
-from parsec.backend.start_api import register_start_api
-from parsec.backend.block_store import register_in_memory_block_store_api
+import os
+import zmq
+import zmq.auth
+from zmq.auth.thread import ThreadAuthenticator
+import json
 
 
-@attr.s
-class BackendComponents:
-    message = attr.ib()
-    group = attr.ib()
-    uservlob = attr.ib()
-    vlob = attr.ib()
-    pubkey = attr.ib()
-    privkey = attr.ib()
-    block_store = attr.ib()
-    event = attr.ib()
-
-    def get_dispatcher(self):
-        return ComposedDispatcher([
-            base_dispatcher,
-            self.message.get_dispatcher(),
-            self.group.get_dispatcher(),
-            self.uservlob.get_dispatcher(),
-            self.vlob.get_dispatcher(),
-            self.pubkey.get_dispatcher(),
-            self.privkey.get_dispatcher(),
-            self.block_store.get_dispatcher(),
-            self.event.get_dispatcher()
-        ])
+base_dir = os.path.dirname(__file__)
+SERVER_SECRET = '%s/private_keys/server.key_secret' % base_dir
+PUBLIC_KEYS_DIR = '%s/public_keys' % base_dir
 
 
-def mocked_components_factory(block_store):
-    from parsec.backend.pubkey import MockedPubKeyComponent
-    from parsec.backend.privkey import MockedPrivKeyComponent
-    from parsec.backend.vlob import MockedVlobComponent
-    from parsec.backend.user_vlob import MockedUserVlobComponent
-    from parsec.backend.message import InMemoryMessageComponent
-    from parsec.backend.group import MockedGroupComponent
-    from parsec.backend.block_store import BlockStoreInfoComponent
-    return BackendComponents(
-        message=InMemoryMessageComponent(),
-        group=MockedGroupComponent(),
-        uservlob=MockedUserVlobComponent(),
-        vlob=MockedVlobComponent(),
-        pubkey=MockedPubKeyComponent(),
-        privkey=MockedPrivKeyComponent(),
-        block_store=BlockStoreInfoComponent(block_store),
-        event=EventComponent()
-    )
+# Dummy data
 
-def postgresql_components_factory(app, store, block_store):
-    from parsec.backend import postgresql
-    from parsec.backend.block_store import BlockStoreInfoComponent
+user_manifest = {
+    '/': {'type': 'folder'},
+    '/foo': {'type': 'folder'},
+    '/foo/sub.txt': {'type': 'file', 'id': '001'},
+    '/bar.txt': {'type': 'file', 'id': '002'},
+}
 
-    conn = postgresql.PostgreSQLConnection(store)
+file_manifests = {
+    '001': {
+        'blocks': [
+            {'id': '001001'},
+            {'id': '001002'},
+        ]
+    },
+    '002': {
+        'blocks': [
+            {'id': '002001'},
+            {'id': '002002'},
+        ]
+    }
+}
 
-    async def on_startup(app):
-        await conn.open_connection()
-    app.on_startup.append(on_startup)
-
-    async def on_shutdown(app):
-        await conn.close_connection()
-    app.on_shutdown.append(on_shutdown)
-
-    return BackendComponents(
-        message=postgresql.PostgreSQLMessageComponent(conn),
-        group=postgresql.PostgreSQLGroupComponent(conn),
-        uservlob=postgresql.PostgreSQLUserVlobComponent(conn),
-        vlob=postgresql.PostgreSQLVlobComponent(conn),
-        pubkey=postgresql.PostgreSQLPubKeyComponent(conn),
-        privkey=postgresql.PostgreSQLPrivKeyComponent(conn),
-        block_store=BlockStoreInfoComponent(block_store),
-        event=EventComponent()
-    )
+# Also handle blocks in backend for the sake of simplicity
+blocks = {
+    # Should be bytes, but use str instead not to bother with json encoding
+    '001001': 'hello ',
+    '001002': 'world !',
+    '002001': 'foo',
+    '002002': 'bar',
+}
 
 
-__all__ = ('register_backend_api', 'register_start_api',
-           'postgresql_components_factory', 'mocked_components_factory',
-           'register_in_memory_block_store_api')
+def main(addr):
+    global user_manifest
+    global file_manifests
+    global blocks
+
+    context = zmq.Context()
+
+    # Auth is required between core and backend
+    auth = ThreadAuthenticator(context)
+    auth.start()
+    # auth.allow('127.0.0.1')
+    # Tell authenticator to use the certificate in a directory
+    auth.configure_curve(domain='*', location=PUBLIC_KEYS_DIR)
+
+    socket = context.socket(zmq.ROUTER)
+    server_public, server_secret = zmq.auth.load_certificate(SERVER_SECRET)
+    socket.curve_secretkey = server_secret
+    socket.curve_publickey = server_public
+    socket.curve_server = True # must come before bind
+    socket.bind(addr)
+
+
+    try:
+        while True:
+            id, _, raw_msg = socket.recv_multipart()
+            msg = json.loads(raw_msg.decode())
+            if msg['cmd'] == 'user_manifest_read':
+                resp = {'status': 'ok', 'content': user_manifest}
+            elif msg['cmd'] == 'user_manifest_write':
+                user_manifest = msg['content']
+                resp = {'status': 'ok'}
+            elif msg['cmd'] == 'file_manifest_read':
+                try:
+                    resp = {'status': 'ok', 'content': file_manifests[msg['id']]}
+                except KeyError:
+                    resp = {'status': 'not_found'}
+            elif msg['cmd'] == 'file_manifest_write':
+                try:
+                    file_manifests[msg['id']] = msg['content']
+                except KeyError:
+                    resp = {'status': 'not_found'}
+                resp = {'status': 'ok'}
+            elif msg['cmd'] == 'block_read':
+                try:
+                    resp = {'status': 'ok', 'content': blocks[msg['id']]}
+                except KeyError:
+                    resp = {'status': 'not_found'}
+            elif msg['cmd'] == 'block_write':
+                try:
+                    blocks[msg['id']] = msg['content']
+                except KeyError:
+                    resp = {'status': 'not_found'}
+                resp = {'status': 'ok'}
+            else:
+                resp = {'status': 'unknown_cmd'}
+            socket.send_multipart([id, b'', json.dumps(resp).encode()])
+            print('MSG: %s ==> %s' % (msg, resp))
+    except KeyboardInterrupt:
+        print('bye ;-)')
+
+
+if __name__ == '__main__':
+    import sys
+    if len(sys.argv) != 2:
+        print("usage: backend.py <address>")
+        raise SystemExit(1)
+    main(sys.argv[1])

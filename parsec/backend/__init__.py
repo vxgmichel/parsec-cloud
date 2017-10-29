@@ -1,113 +1,93 @@
-import os
-import zmq
-import zmq.auth
-from zmq.auth.thread import ThreadAuthenticator
-import json
+# import os
+# import zmq
+# import zmq.auth
+# from zmq.auth.thread import ThreadAuthenticator
+# import attr
+
+# from parsec.backend.message import InMemoryMessageComponent
+# from parsec.exceptions import ParsecError
 
 
-base_dir = os.path.dirname(__file__)
-SERVER_SECRET = '%s/private_keys/server.key_secret' % base_dir
-PUBLIC_KEYS_DIR = '%s/public_keys' % base_dir
+# @attr.s(slots=True)
+# class RequestContext:
+#     userid = attr.ib()
+#     msg = attr.ib()
+#     frames = attr.ib()
 
 
-# Dummy data
-
-user_manifest = {
-    '/': {'type': 'folder'},
-    '/foo': {'type': 'folder'},
-    '/foo/sub.txt': {'type': 'file', 'id': '001'},
-    '/bar.txt': {'type': 'file', 'id': '002'},
-}
-
-file_manifests = {
-    '001': {
-        'blocks': [
-            {'id': '001001'},
-            {'id': '001002'},
-        ]
-    },
-    '002': {
-        'blocks': [
-            {'id': '002001'},
-            {'id': '002002'},
-        ]
-    }
-}
-
-# Also handle blocks in backend for the sake of simplicity
-blocks = {
-    # Should be bytes, but use str instead not to bother with json encoding
-    '001001': 'hello ',
-    '001002': 'world !',
-    '002001': 'foo',
-    '002002': 'bar',
-}
+# def _build_request(frames):
+#     if len(frames) < 3:
+#         return None
+#     id_frame, _, msg_frame, *_ = frames
+#     try:
+#         body = ejson_loads(msg_frame.bytes.decode())
+#     except:
+#         # Invalid msg
+#         return None
+#     return RequestContext(
+#         id_frame.bytes,
+#         msg,
+#         frames
+#     )
 
 
-def main(addr):
-    global user_manifest
-    global file_manifests
-    global blocks
-
-    context = zmq.Context()
-
-    # Auth is required between core and backend
-    auth = ThreadAuthenticator(context)
-    auth.start()
-    # auth.allow('127.0.0.1')
-    # Tell authenticator to use the certificate in a directory
-    auth.configure_curve(domain='*', location=PUBLIC_KEYS_DIR)
-
-    socket = context.socket(zmq.ROUTER)
-    server_public, server_secret = zmq.auth.load_certificate(SERVER_SECRET)
-    socket.curve_secretkey = server_secret
-    socket.curve_publickey = server_public
-    socket.curve_server = True # must come before bind
-    socket.bind(addr)
+# def _build_response(id, rep):
+#     if isinstance(rep, (list, tuple)):
+#         repmsg, *frames = rep
+#     else:
+#         repmsg = rep
+#         frames = ()
+#     return (id, b'', ejson_dumps(repmsg).encode(), *exframes)
 
 
-    try:
-        while True:
-            id, _, raw_msg = socket.recv_multipart()
-            msg = json.loads(raw_msg.decode())
-            if msg['cmd'] == 'user_manifest_read':
-                resp = {'status': 'ok', 'content': user_manifest}
-            elif msg['cmd'] == 'user_manifest_write':
-                user_manifest = msg['content']
-                resp = {'status': 'ok'}
-            elif msg['cmd'] == 'file_manifest_read':
-                try:
-                    resp = {'status': 'ok', 'content': file_manifests[msg['id']]}
-                except KeyError:
-                    resp = {'status': 'not_found'}
-            elif msg['cmd'] == 'file_manifest_write':
-                try:
-                    file_manifests[msg['id']] = msg['content']
-                except KeyError:
-                    resp = {'status': 'not_found'}
-                resp = {'status': 'ok'}
-            elif msg['cmd'] == 'block_read':
-                try:
-                    resp = {'status': 'ok', 'content': blocks[msg['id']]}
-                except KeyError:
-                    resp = {'status': 'not_found'}
-            elif msg['cmd'] == 'block_write':
-                try:
-                    blocks[msg['id']] = msg['content']
-                except KeyError:
-                    resp = {'status': 'not_found'}
-                resp = {'status': 'ok'}
-            else:
-                resp = {'status': 'unknown_cmd'}
-            socket.send_multipart([id, b'', json.dumps(resp).encode()])
-            print('MSG: %s ==> %s' % (msg, resp))
-    except KeyboardInterrupt:
-        print('bye ;-)')
+# def run_backend(addr, server_keys, public_keys_dir):
+#     cmd_addr = addr
+#     # cmd_addr = 'tcp://%s:%s/cmds' % (host, port)
+#     # event_addr = 'tcp://%s:%s/events' % (host, port)
 
+#     context = zmq.Context()
 
-if __name__ == '__main__':
-    import sys
-    if len(sys.argv) != 2:
-        print("usage: backend.py <address>")
-        raise SystemExit(1)
-    main(sys.argv[1])
+#     # Auth is required between core and backend
+#     auth = ThreadAuthenticator(context)
+#     auth.start()
+#     # auth.allow('127.0.0.1')
+#     # Tell authenticator to use the certificate in a directory
+#     auth.configure_curve(domain='*', location=public_keys_dir)
+#     # server_public, server_secret = zmq.auth.load_certificate(SERVER_SECRET)
+#     server_public, server_secret = server_keys
+
+#     cmds_router = context.socket(zmq.ROUTER)
+#     cmds_router.curve_secretkey = server_secret
+#     cmds_router.curve_publickey = server_public
+#     cmds_router.curve_server = True  # must come before bind
+#     cmds_router.bind(cmd_addr)
+
+#     # events_dealer = context.socket(zmq.DEALER)
+#     # events_dealer.curve_secretkey = server_secret
+#     # events_dealer.curve_publickey = server_public
+#     # events_dealer.curve_server = True # must come before bind
+#     # events_dealer.bind(cmd_addr)
+
+#     msgapi = InMemoryMessageComponent()
+#     api_cmds_router = {
+#         **msgapi.get_dispatcher()
+#     }
+#     while True:
+#         id, _, frames = cmds_router.recv_multipart()
+#         print('REQ: ', id, frames)
+#         req = _build_request(frames)
+#         if not req:
+#             cmds_router.send_multipart((id, b'', b'{"status": "bad_msg"}'))
+#             continue
+#         try:
+#             cmd = api_cmds_router[req.msg['cmd']]
+#         except KeyError:
+#             cmds_router.send_multipart(_build_response(id, {"status": "unknown_cmd"}))
+#             continue
+#         else:
+#             try:
+#                 rep = cmd(req)
+#             except ParsecError as exc:
+#                 rep = exc.to_dict()
+#         print('REP: ', id, rep)
+#         cmds_router.send_multipart(_build_response(id, rep))

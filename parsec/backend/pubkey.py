@@ -1,9 +1,9 @@
 from marshmallow import fields
 
-from parsec.tools import UnknownCheckedSchema
+from parsec.tools import BaseCmdSchema
 
 
-class cmd_PUBKEY_GET_Schema(UnknownCheckedSchema):
+class cmd_PUBKEY_GET_Schema(BaseCmdSchema):
     id = fields.String(required=True)
 
 

@@ -2,7 +2,8 @@ from collections import defaultdict
 import queue
 
 from parsec.backend.db.base import BaseDB
-from parsec.backend.exceptions import *
+from parsec.backend.exceptions import (
+    PubKeyNotFound, VlobNotFound, UserVlobError, TrustSeedError)
 
 
 class InMemoryDB(BaseDB):
@@ -19,7 +20,7 @@ class InMemoryDB(BaseDB):
         try:
             return self._pubkeys[userid]
         except KeyError:
-            raise PubKeyError('Unknown user')
+            raise PubKeyNotFound('Unknown user')
 
     def pubkey_auth(self, pubkey):
         for userid, userkey in self._pubkeys.items():

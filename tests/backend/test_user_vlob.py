@@ -1,7 +1,7 @@
 import pytest
 
 
-class TestUserVlobComponent:
+class TestUserVlob:
 
     def test_user_vlob_read_ok(self, alicesock):
         alicesock.send({'cmd': 'user_vlob_read'})

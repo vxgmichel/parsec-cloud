@@ -28,8 +28,7 @@ def _build_from_template(template, bases):
     return out
 
 
-
-class TestVlobAPI:
+class TestVlob:
 
     @pytest.mark.parametrize("id,blob", [
         (None, b''),

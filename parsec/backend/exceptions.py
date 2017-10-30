@@ -16,17 +16,6 @@ class HandshakeError(ParsecError):
 
 # Backend errors
 
-class PrivKeyError(ParsecError):
-    status = 'privkey_error'
-
-
-class PrivKeyHashCollision(PrivKeyError):
-    status = 'privkey_hash_collision'
-
-
-class PrivKeyNotFound(PrivKeyError):
-    status = 'privkey_not_found'
-
 
 class PubKeyError(ParsecError):
     status = 'pubkey_error'

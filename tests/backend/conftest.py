@@ -42,11 +42,16 @@ def backend_addr(backend):
 
 @pytest.fixture
 def alice(backend):
-    alice_public = b"ve>exeUXhI:mNY%TAQ9>}?/%/=52fw[Kd$z6U{N<"
-    alice_private = b"mttsOg+W3=[TQ94Le[eRc3V73!@7r)fs7gafQG[P"
+    alice_public = zmq.utils.z85.decode(b"ve>exeUXhI:mNY%TAQ9>}?/%/=52fw[Kd$z6U{N<")
+    alice_private = zmq.utils.z85.decode(b"mttsOg+W3=[TQ94Le[eRc3V73!@7r)fs7gafQG[P")
+    alice_id = 'alice@test.com'
     # Who cares about concurrency anyway ?
-    backend.db._pubkeys['alice'] = zmq.utils.z85.decode(alice_public)
-    return alice_private, alice_public
+    backend.db._pubkeys[alice_id] = alice_public
+    return {
+        'id': alice_id,
+        'private': alice_private,
+        'public': alice_public
+    }
 
 
 class TalkToBackendSock:
@@ -64,11 +69,10 @@ class TalkToBackendSock:
 
 @pytest.fixture
 def alicesock(backend_addr, alice):
-    alice_private, alice_public = alice
     ctx = zmq.Context.instance()
     socket = ctx.socket(zmq.REQ)
-    socket.curve_secretkey = alice_private
-    socket.curve_publickey = alice_public
+    socket.curve_secretkey = zmq.utils.z85.encode(alice['private'])
+    socket.curve_publickey = zmq.utils.z85.encode(alice['public'])
     socket.curve_serverkey = SERVER_PUBLIC
     socket.connect(backend_addr)
     yield TalkToBackendSock(socket)
@@ -77,20 +81,24 @@ def alicesock(backend_addr, alice):
 
 @pytest.fixture
 def bob(backend):
-    bob_public = b"J3{a{k[}-9@Mo3$taFD.slOx?Wqt@H7<Xt:ygMmf"
-    bob_private = b"3eju8rs-E1^j!Y)yx<X5*LZ)w!b:waZ:XF9LV4nf"
+    bob_public = zmq.utils.z85.decode(b"J3{a{k[}-9@Mo3$taFD.slOx?Wqt@H7<Xt:ygMmf")
+    bob_private = zmq.utils.z85.decode(b"3eju8rs-E1^j!Y)yx<X5*LZ)w!b:waZ:XF9LV4nf")
+    bob_id = 'bob@test.com'
     # Who cares about concurrency anyway ?
-    backend.db._pubkeys['bob'] = zmq.utils.z85.decode(bob_public)
-    return bob_private, bob_public
+    backend.db._pubkeys[bob_id] = bob_public
+    return {
+        'id': bob_id,
+        'private': bob_private,
+        'public': bob_public
+    }
 
 
 @pytest.fixture
 def bobsock(backend_addr, bob):
-    bob_private, bob_public = bob
     ctx = zmq.Context.instance()
     socket = ctx.socket(zmq.REQ)
-    socket.curve_secretkey = bob_private
-    socket.curve_publickey = bob_public
+    socket.curve_secretkey = zmq.utils.z85.encode(bob['private'])
+    socket.curve_publickey = zmq.utils.z85.encode(bob['public'])
     socket.curve_serverkey = SERVER_PUBLIC
     socket.connect(backend_addr)
     yield TalkToBackendSock(socket)

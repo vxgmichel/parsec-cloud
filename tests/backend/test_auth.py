@@ -1,7 +1,7 @@
 import pytest
 import zmq
 
-from tests.backend.conftest import SERVER_PUBLIC, SERVER_SECRET
+from tests.backend.conftest import SERVER_PUBLIC
 
 
 class TestBadAuth:
@@ -20,7 +20,8 @@ class TestBadAuth:
         {'SERVER_PUBLIC': DUMMYKEY},
     ])
     def test_bad_key(self, backend_addr, keys, alice):
-        alice_private, alice_public = alice
+        alice_private = zmq.utils.z85.encode(alice['private'])
+        alice_public = zmq.utils.z85.encode(alice['public'])
         ctx = zmq.Context.instance()
         socket = ctx.socket(zmq.REQ)
         socket.curve_secretkey = keys.get('CLIENT_SECRET', alice_private)
@@ -47,7 +48,8 @@ class TestBadAuth:
             raise AssertionError("Backend didn't accept connection")
 
     def test_good_auth(self, backend_addr, alice):
-        alice_private, alice_public = alice
+        alice_private = zmq.utils.z85.encode(alice['private'])
+        alice_public = zmq.utils.z85.encode(alice['public'])
         ctx = zmq.Context.instance()
         socket = ctx.socket(zmq.REQ)
         socket.curve_secretkey = alice_private

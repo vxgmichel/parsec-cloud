@@ -1,5 +1,6 @@
 import pytest
 import zmq
+import json
 from threading import Thread
 
 from parsec.backend.app import BackendApp
@@ -48,6 +49,19 @@ def alice(backend):
     return alice_private, alice_public
 
 
+class TalkToBackendSock:
+    def __init__(self, socket):
+        self.socket = socket
+
+    def send(self, msg, *frames):
+        self.socket.send_multipart((json.dumps(msg).encode(), *frames))
+
+    def recv(self):
+        repframes = self.socket.recv_multipart()
+        rep = json.loads(repframes[0])
+        return (rep, b''.join(repframes[1:]))
+
+
 @pytest.fixture
 def alicesock(backend_addr, alice):
     alice_private, alice_public = alice
@@ -57,7 +71,7 @@ def alicesock(backend_addr, alice):
     socket.curve_publickey = alice_public
     socket.curve_serverkey = SERVER_PUBLIC
     socket.connect(backend_addr)
-    yield socket
+    yield TalkToBackendSock(socket)
     socket.close()
 
 
@@ -79,5 +93,5 @@ def bobsock(backend_addr, bob):
     socket.curve_publickey = bob_public
     socket.curve_serverkey = SERVER_PUBLIC
     socket.connect(backend_addr)
-    yield socket
+    yield TalkToBackendSock(socket)
     socket.close()

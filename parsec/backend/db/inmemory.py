@@ -49,31 +49,29 @@ class InMemoryDB(BaseDB):
             msgs[:limit]
         return msgs
 
-    def vlob_create(self, id, rts, wts, blob):
-        self._vlobs[vlob.id] = (rts, wts, [blob])
+    def vlob_create(self, id, rts, wts, blobframe):
+        self._vlobs[id] = (rts, wts, [blobframe.bytes])
 
     def vlob_read(self, id, trust_seed, version):
-        try:
-            rts, _, blobs = self._vlobs[id]
-            if rts != trust_seed:
-                raise TrustSeedError('Invalid read trust seed.')
-        except KeyError:
+        if id not in self._vlobs:
             raise VlobNotFound('Vlob not found.')
+        rts, _, blobs = self._vlobs[id]
+        if rts != trust_seed:
+            raise TrustSeedError('Invalid read trust seed.')
         version = version or len(blobs)
         try:
-            return blobs[version - 1]
+            return blobs[version - 1], version
         except IndexError:
             raise VlobNotFound('Wrong blob version.')
 
-    def vlob_update(self, id, trust_seed, version, blob):
-        try:
-            _, wts, blobs = self._vlobs[id]
-            if wts != trust_seed:
-                raise TrustSeedError('Invalid write trust seed.')
-        except KeyError:
+    def vlob_update(self, id, trust_seed, version, blobframe):
+        if id not in self._vlobs:
             raise VlobNotFound('Vlob not found.')
+        _, wts, blobs = self._vlobs[id]
+        if wts != trust_seed:
+            raise TrustSeedError('Invalid write trust seed.')
         if version - 1 == len(blobs):
-            blobs.append(blob)
+            blobs.append(blobframe.bytes)
         else:
             raise VlobNotFound('Wrong blob version.')
         self._notify('vlob_updated', id)
@@ -90,9 +88,9 @@ class InMemoryDB(BaseDB):
         except IndexError:
             raise UserVlobError('Wrong blob version.')
 
-    def user_vlob_update(self, id, version, bodyframe):
+    def user_vlob_update(self, id, version, blobframe):
         vlobs = self._user_vlobs[id]
         if len(vlobs) != version - 1:
             raise UserVlobError('Wrong blob version.')
-        vlobs.append(bodyframe.bytes)
+        vlobs.append(blobframe.bytes)
         self._notify('user_vlob_updated', id)

@@ -1,0 +1,27 @@
+[[source]]
+
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+name = "pypi"
+
+
+[packages]
+
+"cf16585" = {path = "/home/emmanuel/projects/parsec-cloud", editable = true}
+click = "*"
+logbook = "*"
+pyzmq = "==17.0.0b1"
+attrs = "*"
+marshmallow = "*"
+arrow = "*"
+
+
+[dev-packages]
+
+pytest = "*"
+sphinx = "*"
+tox = "*"
+"flake8" = "*"
+bumpversion = "*"
+freezegun = "*"
+wheel = "*"

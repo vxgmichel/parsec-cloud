@@ -15,20 +15,15 @@ with open('HISTORY.rst') as history_file:
     history = history_file.read()
 
 requirements = [
-    "Logbook==1.0.0",
-    "cachetools==2.0.0",
-    "cryptography==1.7.1",
-    "simplejson==3.10.0",
-    "pyaml==16.12.2",
+    "attrs==17.2.0",
     "click==6.7",
-    "blinker==1.4",
-    "websockets==3.3",
-    "marshmallow==2.13.5",
-    "gnupg==2.2.0",
     "python-dateutil==2.6.0",
     "arrow==0.10.0",
-    "attrs==17.2.0",
-    "aiohttp==2.2.3",
+    "simplejson==3.10.0",
+    "marshmallow==2.13.5",
+    "pyzmq==17.0.0b1",
+    "Logbook==1.0.0",
+    "cryptography==1.7.1",
 ]
 
 extra_requirements = {

@@ -2,31 +2,30 @@ import attr
 from collections import defaultdict
 from marshmallow import fields
 
-from parsec.tools import UnknownCheckedSchema
+from parsec.tools import BaseCmdSchema
 
 
-class cmd_NEW_Schema(UnknownCheckedSchema):
+class cmd_NEW_Schema(BaseCmdSchema):
     recipient = fields.String(required=True)
-    body = fields.Base64Bytes(required=True)
 
 
-class cmd_GET_Schema(UnknownCheckedSchema):
-    offset = fields.Int(missing=0)
-    length = fields.Int(missing=None)
+class cmd_GET_Schema(BaseCmdSchema):
+    offset = fields.Int(validate=lambda n: n >= 0, missing=0)
+    limit = fields.Int(validate=lambda n: n > 0, missing=None)
 
 
 def api_message_new(app, req):
     msg = cmd_NEW_Schema().load(req.msg)
     try:
-        body = req.frames[2]
+        bodyframe = req.exframes[0]
     except IndexError:
         return {'status': 'missing_body_frame'}
     recipient = msg['recipient']
-    app.db.message_send(recipient, body)
+    app.db.message_send(recipient, bodyframe)
     return {'status': 'ok'}
 
 
 def api_message_get(app, req):
     msg = cmd_GET_Schema().load(req.msg)
-    messages = app.db.message_get(req.userid, offset=msg['offset'], length=msg['offset'])
-    return ({'status': 'ok'}, *messages)
+    messages = app.db.message_get(req.userid, offset=msg['offset'], limit=msg['limit'])
+    return ({'status': 'ok', 'offset': msg['offset'], 'count': len(messages)}, *messages)

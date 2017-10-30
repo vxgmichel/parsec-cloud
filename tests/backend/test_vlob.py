@@ -8,7 +8,7 @@ def vlob(alicesock, content=b'<content v1>', id=None):
     if id:
         msg['id'] = id
     alicesock.send(msg, content)
-    rep, _ = alicesock.recv()
+    rep = alicesock.recv()
     assert rep['status'] == 'ok'
     return {
         'id': rep['id'],
@@ -45,7 +45,7 @@ class TestVlob:
         if id:
             msg['id'] = id
         alicesock.send(msg, blob)
-        rep, _ = alicesock.recv()
+        rep = alicesock.recv()
         assert rep == {
             'status': 'ok',
             'id': id if id else '#XyZ#',
@@ -64,12 +64,12 @@ class TestVlob:
     def test_vlob_create_bad_msg(self, msg, content, alicesock):
         contentframes = [] if content is None else [content]
         alicesock.send({'cmd': 'vlob_create', **msg}, *contentframes)
-        rep, _ = alicesock.recv()
+        rep = alicesock.recv()
         assert rep['status'] in ('bad_msg', 'missing_body_frame')
 
     def test_vlob_read_not_found(self, alicesock):
         alicesock.send({'cmd': 'vlob_read', 'id': '1234', 'trust_seed': 'rts-123'})
-        rep, _ = alicesock.recv()
+        rep = alicesock.recv()
         assert rep == {'status': 'vlob_not_found', 'label': 'Vlob not found.'}
 
     def test_vlob_read_ok(self, alicesock, vlob):
@@ -78,13 +78,13 @@ class TestVlob:
             'id': vlob['id'],
             'trust_seed': vlob['read_trust_seed']
         })
-        rep, content = alicesock.recv()
+        rep, *contentframes = alicesock.recv(exframes=True)
         assert rep == {
             'status': 'ok',
             'id': vlob['id'],
             'version': vlob['version']
         }
-        assert content == vlob['content']
+        assert contentframes == [vlob['content']]
 
     @pytest.mark.parametrize('bad_msg', [
         {'id': '<id>', 'trust_seed': '<read_trust_seed>', 'bad_field': 'foo'},
@@ -99,7 +99,7 @@ class TestVlob:
     def test_vlob_read_bad_msg(self, bad_msg, alicesock, vlob):
         msg = _build_from_template(bad_msg, vlob)
         alicesock.send({'cmd': 'vlob_read', **msg})
-        rep, _ = alicesock.recv()
+        rep = alicesock.recv()
         assert rep['status'] in ('bad_msg', 'missing_body_frame')
 
     def test_read_bad_version(self, alicesock, vlob):
@@ -109,7 +109,7 @@ class TestVlob:
             'trust_seed': vlob['read_trust_seed'],
             'version': 2
         })
-        rep, _ = alicesock.recv()
+        rep = alicesock.recv()
         assert rep['status'] == 'vlob_not_found'
 
     def test_vlob_update_ok(self, alicesock, vlob):
@@ -120,7 +120,7 @@ class TestVlob:
             'trust_seed': vlob['write_trust_seed'],
             'version': 2
         }, new_content)
-        rep, _ = alicesock.recv()
+        rep = alicesock.recv()
         assert rep == {'status': 'ok'}
 
     @pytest.mark.parametrize('msg,content', [
@@ -148,7 +148,7 @@ class TestVlob:
         msg = _build_from_template(msg, vlob)
         contentframes = [] if content is None else [content]
         alicesock.send({'cmd': 'vlob_update', **msg}, *contentframes)
-        rep, _ = alicesock.recv()
+        rep = alicesock.recv()
         assert rep['status'] == 'bad_msg'
 
     def test_vlob_update_bad_id(self, alicesock, vlob):
@@ -159,7 +159,7 @@ class TestVlob:
             'trust_seed': vlob['write_trust_seed'],
             'version': 2
         }, new_content)
-        rep, _ = alicesock.recv()
+        rep = alicesock.recv()
         assert rep == {'status': 'vlob_not_found', 'label': 'Vlob not found.'}
 
     def test_update_bad_version(self, alicesock, vlob):
@@ -170,7 +170,7 @@ class TestVlob:
             'trust_seed': vlob['write_trust_seed'],
             'version': 42
         }, new_content)
-        rep, _ = alicesock.recv()
+        rep = alicesock.recv()
         assert rep == {'status': 'vlob_not_found', 'label': 'Wrong blob version.'}
 
     def test_update_bad_seed(self, alicesock, vlob):
@@ -181,5 +181,5 @@ class TestVlob:
             'trust_seed': 'foooo',
             'version': 2
         }, new_content)
-        rep, _ = alicesock.recv()
+        rep = alicesock.recv()
         assert rep == {'status': 'trust_seed_error', 'label': 'Invalid write trust seed.'}

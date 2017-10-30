@@ -61,10 +61,17 @@ class TalkToBackendSock:
     def send(self, msg, *frames):
         self.socket.send_multipart((json.dumps(msg).encode(), *frames))
 
-    def recv(self):
+    def recv(self, exframes=False):
         repframes = self.socket.recv_multipart()
         rep = json.loads(repframes[0])
-        return (rep, b''.join(repframes[1:]))
+        repexframes = repframes[1:]
+        if not exframes:
+            assert not repexframes
+            return rep
+        else:
+            if type(exframes) is int:
+                assert len(repexframes) == exframes
+            return (rep, *repexframes)
 
 
 @pytest.fixture

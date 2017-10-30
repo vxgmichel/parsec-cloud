@@ -5,34 +5,34 @@ class TestUserVlob:
 
     def test_user_vlob_read_ok(self, alicesock):
         alicesock.send({'cmd': 'user_vlob_read'})
-        rep, content = alicesock.recv()
+        rep, *contentframes = alicesock.recv(exframes=True)
         assert rep == {'status': 'ok', 'version': 0}
-        assert content == b''
+        assert contentframes == [b'']
 
     def test_user_vlob_read_wrong_version(self, alicesock):
         alicesock.send({'cmd': 'user_vlob_read', 'version': 42})
-        rep, _ = alicesock.recv()
+        rep = alicesock.recv()
         assert rep == {'status': 'user_vlob_error', 'label': 'Wrong blob version.'}
 
     def test_user_vlob_update_ok_and_read_previous_version(self, backend, alicesock):
         # Update user vlob
         alicesock.send({'cmd': 'user_vlob_update', 'version': 1}, b'Next version.')
-        rep, _ = alicesock.recv()
+        rep = alicesock.recv()
         assert rep == {'status': 'ok'}
         # Read previous version
         alicesock.send({'cmd': 'user_vlob_read', 'version': 0})
-        rep, content = alicesock.recv()
+        rep, *contentframes = alicesock.recv(exframes=True)
         assert rep == {'status': 'ok', 'version': 0}
-        assert content == b''
+        assert contentframes == [b'']
         # New version should be ok as well
         alicesock.send({'cmd': 'user_vlob_read'})
-        rep, content = alicesock.recv()
+        rep, *contentframes = alicesock.recv(exframes=True)
         assert rep == {'status': 'ok', 'version': 1}
-        assert content == b'Next version.'
+        assert contentframes == [b'Next version.']
 
     def test_user_vlob_update_wrong_version(self, alicesock):
         alicesock.send({'cmd': 'user_vlob_update', 'version': 42}, b'Next version.')
-        rep, _ = alicesock.recv()
+        rep = alicesock.recv()
         assert rep == {'status': 'user_vlob_error', 'label': 'Wrong blob version.'}
 
     def test_multiple_users(self, alicesock, bobsock):
@@ -44,15 +44,15 @@ class TestUserVlob:
 
         _update('alice', alicesock)
         _update('bob', bobsock)
-        alicerep, _ = alicesock.recv()
-        bobrep, _ = bobsock.recv()
+        alicerep = alicesock.recv()
+        bobrep = bobsock.recv()
         assert alicerep == {'status': 'ok'}
         assert bobrep == {'status': 'ok'}
 
         alicesock.send({'cmd': 'user_vlob_read', 'version': 1})
         bobsock.send({'cmd': 'user_vlob_read', 'version': 1})
-        alicerep, alicecontent = alicesock.recv()
-        bobrep, bobcontent = bobsock.recv()
+        alicerep, alicecontent = alicesock.recv(exframes=1)
+        bobrep, bobcontent = bobsock.recv(exframes=1)
 
         assert alicerep == {'status': 'ok', 'version': 1}
         assert alicecontent == b'Next version for alice.'

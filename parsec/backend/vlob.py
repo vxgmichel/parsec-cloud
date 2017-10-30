@@ -71,8 +71,8 @@ def api_vlob_read(app, req):
 def api_vlob_update(app, req):
     msg = cmd_UPDATE_Schema().load(req.msg)
     try:
-        body = req.exframes[0]
+        bodyframe = req.exframes[0]
     except IndexError:
         return {'status': 'missing_body_frame'}
-    app.db.vlob_update(msg['id'], msg['trust_seed'], msg['version'], body)
+    app.db.vlob_update(msg['id'], msg['trust_seed'], msg['version'], bodyframe)
     return {'status': 'ok'}

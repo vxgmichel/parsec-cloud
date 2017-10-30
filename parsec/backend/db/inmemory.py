@@ -40,15 +40,16 @@ class InMemoryDB(BaseDB):
                 (topic, sender) in self._notification_registers):
             self._notifications.put((topic, sender))
 
-    def message_send(self, recipientid, body):
-        self._messages[recipientid].append(body)
+    def message_send(self, recipientid, bodyframe):
+        self._messages[recipientid].append(bodyframe.bytes)
         self._notify('message_arrived', recipientid)
 
     def message_get(self, userid, offset=0, limit=None):
         msgs = self._messages[userid][offset:]
         if limit:
-            msgs[:limit]
-        return msgs
+            return msgs[:limit]
+        else:
+            return msgs
 
     def vlob_create(self, id, rts, wts, blobframe):
         self._vlobs[id] = (rts, wts, [blobframe.bytes])

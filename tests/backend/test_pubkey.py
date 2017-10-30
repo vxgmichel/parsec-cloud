@@ -1,5 +1,4 @@
 import pytest
-import unittest.mock
 
 
 def _build_from_template(template, bases):
@@ -15,12 +14,12 @@ class TestPubKey:
 
     def test_pubkey_get_ok(self, alicesock, bob):
         alicesock.send({'cmd': 'pubkey_get', 'id': bob['id']})
-        rep, content = alicesock.recv()
+        rep, *contentframes = alicesock.recv(exframes=True)
         assert rep == {
             'status': 'ok',
             'id': bob['id'],
         }
-        assert content == bob['public']
+        assert contentframes == [bob['public']]
 
     @pytest.mark.parametrize('msg', [
         # Bad id
@@ -32,10 +31,10 @@ class TestPubKey:
     ])
     def test_pubkey_get_bad_msg(self, msg, alicesock, bob):
         alicesock.send({'cmd': 'pubkey_get', **msg})
-        rep, _ = alicesock.recv()
+        rep = alicesock.recv()
         assert rep['status'] == 'bad_msg'
 
     def test_pubkey_get_not_found(self, alicesock):
         alicesock.send({'cmd': 'pubkey_get', 'id': 'dummy@test.com'})
-        rep, _ = alicesock.recv()
+        rep = alicesock.recv()
         assert rep == {'status': 'pubkey_not_found', 'label': 'Unknown user'}

@@ -4,7 +4,7 @@ import attr
 from parsec.backend.config import CONFIG
 from parsec.backend.api import init_api
 from parsec.backend.auth import authenticator_factory
-from parsec.backend.exceptions import ParsecError
+from parsec.exceptions import ParsecError
 from parsec.tools import ejson_loads, ejson_dumps
 
 
@@ -22,7 +22,7 @@ def _build_request(frames):
     reqid, _, msgframe, *exframes = frames
     try:
         msg = ejson_loads(msgframe.bytes.decode())
-    except:
+    except Exception:
         # Invalid msg
         return None
     return RequestContext(
@@ -49,7 +49,6 @@ class BackendApp:
         self.zmqcontext = None
         self.authenticator = None
         self.cmds_socket = None
-        self.control_socket = None
         self.cmds = {}
         if config:
             self.config.update(config)
@@ -110,7 +109,8 @@ class BackendApp:
         except KeyError:
             pass
         finally:
-            self.cmds_socket.close()
+            for sock, _ in poller.sockets:
+                sock.close()
             self.authenticator.stop()
 
     def _handle_cmd(self, frames):

@@ -1,7 +1,7 @@
 import pytest
 import zmq
 
-from tests.backend.conftest import SERVER_PUBLIC
+from tests.conftest import SERVER_PUBLIC
 
 
 class TestBadAuth:

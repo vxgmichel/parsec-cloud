@@ -3,7 +3,7 @@ import queue
 
 from parsec.backend.db.base import BaseDB
 from parsec.backend.exceptions import (
-    PubKeyNotFound, VlobNotFound, UserVlobError, TrustSeedError)
+    PubKeyNotFound, VlobError, VlobNotFound, UserVlobError, TrustSeedError)
 
 
 class InMemoryDB(BaseDB):
@@ -52,6 +52,8 @@ class InMemoryDB(BaseDB):
             return msgs
 
     def vlob_create(self, id, rts, wts, blobframe):
+        if id in self._vlobs:
+            raise VlobError('Vlob id already exists')
         self._vlobs[id] = (rts, wts, [blobframe.bytes])
 
     def vlob_read(self, id, trust_seed, version):

@@ -1,11 +1,15 @@
-from parsec.backend import vlob, user_vlob, message, group, pubkey
+from parsec.backend import vlob, user_vlob, message, group, pubkey, blockstore
 
 
 def init_api(app):
     # app.register_cmd('subscribe_event', api_subscribe_event)
     # app.register_cmd('unsubscribe_event', api_unsubscribe_event)
 
-    # app.register_cmd('blockstore_get_url', api_blockstore_get_url)
+    app.register_cmd('blockstore_get_url', blockstore.api_blockstore_get_url)
+    if app.config['BLOCKSTORE_URL'] == '<inbackend>':
+        app.extensions['blockstore'] = blockstore.InMemoryBlockStore()
+        app.register_cmd('blockstore_post', app.extensions['blockstore'].api_blockstore_post)
+        app.register_cmd('blockstore_get', app.extensions['blockstore'].api_blockstore_get)
 
     app.register_cmd('vlob_create', vlob.api_vlob_create)
     app.register_cmd('vlob_read', vlob.api_vlob_read)

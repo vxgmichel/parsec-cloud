@@ -49,6 +49,7 @@ class BackendApp:
         self.zmqcontext = None
         self.authenticator = None
         self.cmds_socket = None
+        self.extensions = {}
         self.cmds = {}
         if config:
             self.config.update(config)

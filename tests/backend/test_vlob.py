@@ -67,6 +67,11 @@ class TestVlob:
         rep = alicesock.recv()
         assert rep['status'] in ('bad_msg', 'missing_body_frame')
 
+    def test_vlob_create_already_exists(self, vlob, alicesock):
+        alicesock.send({'cmd': 'vlob_create', 'id': vlob['id']}, b'foooo')
+        rep = alicesock.recv()
+        assert rep == {'status': 'vlob_error', 'label': 'Vlob id already exists'}
+
     def test_vlob_read_not_found(self, alicesock):
         alicesock.send({'cmd': 'vlob_read', 'id': '1234', 'trust_seed': 'rts-123'})
         rep = alicesock.recv()

@@ -20,6 +20,7 @@ def backend(socket_addr='tcp://127.0.0.1:0'):
         'SERVER_SECRET': SERVER_SECRET,
         'TEST_CONTROL_PIPE': 'inproc://backend-control.01',
         'CMDS_SOCKET_URL': socket_addr,
+        'BLOCKSTORE_URL': '<inbackend>',
     })
     thread = Thread(target=backend.run, daemon=True)
     thread.start()

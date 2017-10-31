@@ -63,7 +63,7 @@ class TalkToBackendSock:
 
     def recv(self, exframes=False):
         repframes = self.socket.recv_multipart()
-        rep = json.loads(repframes[0])
+        rep = json.loads(repframes[0].decode())
         repexframes = repframes[1:]
         if not exframes:
             assert not repexframes

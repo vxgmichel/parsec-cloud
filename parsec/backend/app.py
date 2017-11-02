@@ -5,7 +5,7 @@ from parsec.backend.config import CONFIG
 from parsec.backend.api import init_api
 from parsec.backend.auth import authenticator_factory
 from parsec.exceptions import ParsecError
-from parsec.tools import ejson_loads, ejson_dumps
+from parsec.tools import ejson_loads, ejson_dumps, b64_to_z85
 
 
 @attr.s(slots=True)
@@ -73,8 +73,8 @@ class BackendApp:
         # self.authenticator.configure_curve(domain='*', location=public_keys_dir)
 
         self.cmds_socket = self.zmqcontext.socket(zmq.ROUTER)
-        self.cmds_socket.curve_secretkey = self.config['SERVER_SECRET']
-        self.cmds_socket.curve_publickey = self.config['SERVER_PUBLIC']
+        self.cmds_socket.curve_secretkey = b64_to_z85(self.config['SERVER_SECRET'])
+        self.cmds_socket.curve_publickey = b64_to_z85(self.config['SERVER_PUBLIC'])
         self.cmds_socket.curve_server = True  # must come before bind
 
     def run(self):

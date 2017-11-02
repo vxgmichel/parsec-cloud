@@ -6,31 +6,18 @@ from contextlib import contextmanager
 
 from parsec.backend.app import BackendApp
 from parsec.core.app import CoreApp
+from parsec.tools import b64_to_z85
 
 
-SERVER_SECRET = b"CzXP)X*eM0<=*fz0#>oWiWEvv?ZMYN+=IzL)rHG>"
-SERVER_PUBLIC = b"^NgquxgGVp}vDq[pO<D3[qEt=Py&j@Em69T<[QYa"
+SERVER_SECRET = 'd4o/C7okJKfllAxHAxtWcDolSXbfKcpdzK0Ppe15M1o='
+SERVER_PUBLIC = '0kOyAGdHvgH6EEuhT6WYyvCMABqf9QFlfUOQkOX5M0w='
 
 
 AVAILABLE_USERS = {
     # userid: (public_key, private_key)
-    'alice@test.com': (b"ve>exeUXhI:mNY%TAQ9>}?/%/=52fw[Kd$z6U{N<", b"mttsOg+W3=[TQ94Le[eRc3V73!@7r)fs7gafQG[P"),
-    'bob@test.com': (b"J3{a{k[}-9@Mo3$taFD.slOx?Wqt@H7<Xt:ygMmf", b"3eju8rs-E1^j!Y)yx<X5*LZ)w!b:waZ:XF9LV4nf"),
+    'alice@test.com': ('RYZkAjQvy2jxnQy9ksgPdSV4oBrWixbTL7LzNDCXyaE=', 'YP9vpi2ijHrH9M/FrHeaNvuKgefNiU3Q8USCahTApiM='),
+    'bob@test.com': ('CdrhQlUPX+fRMFlGawb77NuLiNrUAWwdwCnoNpRS99o=', 'jCgpHEEU0eH9ym8bWp1PoVfo2yu1bQGxGHo9cGpk4F8='),
 }
-
-
-@pytest.fixture
-def alice(backend):
-    alice_public = zmq.utils.z85.decode(b"ve>exeUXhI:mNY%TAQ9>}?/%/=52fw[Kd$z6U{N<")
-    alice_private = zmq.utils.z85.decode(b"mttsOg+W3=[TQ94Le[eRc3V73!@7r)fs7gafQG[P")
-    alice_id = 'alice@test.com'
-    # Who cares about concurrency anyway ?
-    backend.db._pubkeys[alice_id] = alice_public
-    return {
-        'id': alice_id,
-        'private': alice_private,
-        'public': alice_public
-    }
 
 
 class CookedSock:
@@ -51,44 +38,6 @@ class CookedSock:
             if type(exframes) is int:
                 assert len(repexframes) == exframes
             return (rep, *repexframes)
-
-
-@pytest.fixture
-def alicesock(backend_addr, alice):
-    ctx = zmq.Context.instance()
-    socket = ctx.socket(zmq.REQ)
-    socket.curve_secretkey = zmq.utils.z85.encode(alice['private'])
-    socket.curve_publickey = zmq.utils.z85.encode(alice['public'])
-    socket.curve_serverkey = SERVER_PUBLIC
-    socket.connect(backend_addr)
-    yield CookedSock(socket)
-    socket.close()
-
-
-@pytest.fixture
-def bob(backend):
-    bob_public = zmq.utils.z85.decode(b"J3{a{k[}-9@Mo3$taFD.slOx?Wqt@H7<Xt:ygMmf")
-    bob_private = zmq.utils.z85.decode(b"3eju8rs-E1^j!Y)yx<X5*LZ)w!b:waZ:XF9LV4nf")
-    bob_id = 'bob@test.com'
-    # Who cares about concurrency anyway ?
-    backend.db._pubkeys[bob_id] = bob_public
-    return {
-        'id': bob_id,
-        'private': bob_private,
-        'public': bob_public
-    }
-
-
-@pytest.fixture
-def bobsock(backend_addr, bob):
-    ctx = zmq.Context.instance()
-    socket = ctx.socket(zmq.REQ)
-    socket.curve_secretkey = zmq.utils.z85.encode(bob['private'])
-    socket.curve_publickey = zmq.utils.z85.encode(bob['public'])
-    socket.curve_serverkey = SERVER_PUBLIC
-    socket.connect(backend_addr)
-    yield CookedSock(socket)
-    socket.close()
 
 
 class BackendManager:
@@ -124,9 +73,9 @@ class BackendManager:
         userpublic, userprivate = AVAILABLE_USERS[userid]
         ctx = zmq.Context.instance()
         socket = ctx.socket(zmq.REQ)
-        socket.curve_secretkey = userprivate
-        socket.curve_publickey = userpublic
-        socket.curve_serverkey = SERVER_PUBLIC
+        socket.curve_secretkey = b64_to_z85(userprivate)
+        socket.curve_publickey = b64_to_z85(userpublic)
+        socket.curve_serverkey = b64_to_z85(SERVER_PUBLIC)
         socket.connect(self.addr)
         yield CookedSock(socket)
         socket.close()
@@ -226,6 +175,8 @@ class BaseCoreTest(BaseBackendTest):
     @classmethod
     def setup_class(cls, config=None, backend_config=None, with_users=True):
         super().setup_class(backend_config, with_users=with_users)
+        config = config or {}
+        config['BACKEND_URL'] = cls.backend.addr
         cls.core = CoreManager(config)
         cls.core.start()
 

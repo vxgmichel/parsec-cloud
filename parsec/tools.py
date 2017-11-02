@@ -3,6 +3,7 @@ import sys
 import inspect
 import json
 import base64
+from zmq.utils import z85
 from functools import partial
 from arrow import Arrow
 
@@ -12,6 +13,12 @@ from logbook import Logger, StreamHandler
 from marshmallow import Schema, fields, validates_schema, ValidationError
 
 from parsec import exceptions
+
+
+def b64_to_z85(txt):
+    if isinstance(txt, str):
+        txt = txt.encode()
+    return z85.encode(base64.decodebytes(txt))
 
 
 # TODO: useful ?

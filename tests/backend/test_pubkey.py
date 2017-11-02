@@ -14,12 +14,12 @@ class TestPubKey:
 
     def test_pubkey_get_ok(self, alicesock, bob):
         alicesock.send({'cmd': 'pubkey_get', 'id': bob['id']})
-        rep, *contentframes = alicesock.recv(exframes=True)
+        rep = alicesock.recv()
         assert rep == {
             'status': 'ok',
             'id': bob['id'],
+            'key': bob['public']
         }
-        assert contentframes == [bob['public']]
 
     @pytest.mark.parametrize('msg', [
         # Bad id

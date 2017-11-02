@@ -1,11 +1,13 @@
 import pytest
 import zmq
 
+from parsec.tools import b64_to_z85
+
 from tests.common import SERVER_PUBLIC
 
 
 class TestBadAuth:
-    DUMMYKEY = b"CzXP)X*eM0<=*fz0#>oW=NGcf?Nb<XLQ3D{G{6A}"
+    DUMMYKEY = 'KkOyAGdHvgH6EEuhT6WYyvCMABqf9QFlfUOQkOX5e0w='
 
     def test_no_key(self, backend_addr):
         ctx = zmq.Context.instance()
@@ -20,13 +22,11 @@ class TestBadAuth:
         {'SERVER_PUBLIC': DUMMYKEY},
     ])
     def test_bad_key(self, backend_addr, keys, alice):
-        alice_private = zmq.utils.z85.encode(alice['private'])
-        alice_public = zmq.utils.z85.encode(alice['public'])
         ctx = zmq.Context.instance()
         socket = ctx.socket(zmq.REQ)
-        socket.curve_secretkey = keys.get('CLIENT_SECRET', alice_private)
-        socket.curve_publickey = keys.get('CLIENT_PUBLIC', alice_public)
-        socket.curve_serverkey = keys.get('SERVER_PUBLIC', SERVER_PUBLIC)
+        socket.curve_secretkey = b64_to_z85(keys.get('CLIENT_SECRET', alice['private']))
+        socket.curve_publickey = b64_to_z85(keys.get('CLIENT_PUBLIC', alice['public']))
+        socket.curve_serverkey = b64_to_z85(keys.get('SERVER_PUBLIC', SERVER_PUBLIC))
         socket.setsockopt(zmq.LINGER, 0)
         socket.connect(backend_addr)
         self._testbed(socket, False)
@@ -43,18 +43,16 @@ class TestBadAuth:
             if auth_ok:
                 return msg
             else:
-                raise AssertionError("Backend accept connection and send back message: %r" % msg)
+                raise AssertionError("Backend wrongly accepted connection and sent back message: %r" % msg)
         elif auth_ok:
             raise AssertionError("Backend didn't accept connection")
 
     def test_good_auth(self, backend_addr, alice):
-        alice_private = zmq.utils.z85.encode(alice['private'])
-        alice_public = zmq.utils.z85.encode(alice['public'])
         ctx = zmq.Context.instance()
         socket = ctx.socket(zmq.REQ)
-        socket.curve_secretkey = alice_private
-        socket.curve_publickey = alice_public
-        socket.curve_serverkey = SERVER_PUBLIC
+        socket.curve_secretkey = b64_to_z85(alice['private'])
+        socket.curve_publickey = b64_to_z85(alice['public'])
+        socket.curve_serverkey = b64_to_z85(SERVER_PUBLIC)
         socket.setsockopt(zmq.LINGER, 0)
         socket.connect(backend_addr)
         rep = self._testbed(socket, True)

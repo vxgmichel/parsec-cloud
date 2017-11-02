@@ -10,7 +10,7 @@ class cmd_PUBKEY_GET_Schema(BaseCmdSchema):
 def api_pubkey_get(app, req):
     msg = cmd_PUBKEY_GET_Schema().load(req.msg)
     key = app.db.pubkey_get(msg['id'])
-    return {'status': 'ok', 'id': msg['id']}, key
+    return {'status': 'ok', 'id': msg['id'], 'key': key}
 
 
 # def api_pubkey_add(app, req):

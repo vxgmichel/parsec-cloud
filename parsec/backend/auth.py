@@ -1,3 +1,4 @@
+from base64 import b64encode
 import zmq
 from zmq.auth.base import Authenticator
 from zmq.auth.thread import ThreadAuthenticator, AuthenticationThread
@@ -40,13 +41,13 @@ class DBAuthenticator(Authenticator):
         self.__app = app
 
     def _retrieve_identity(self, domain, client_key):
-        if self.__app.db.pubkey_auth(client_key):
+        if self.__app.db.pubkey_auth(b64encode(client_key).decode()):
             return True, b'OK'
         else:
             return False, b"Unknown key"
 
     def curve_user_id(self, client_key):
-        return self.__app.db.pubkey_auth(client_key)
+        return self.__app.db.pubkey_auth(b64encode(client_key).decode())
 
     def _authenticate_curve(self, domain, client_key):
         """CURVE ZAP authentication"""

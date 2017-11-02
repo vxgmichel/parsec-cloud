@@ -5,8 +5,9 @@ from threading import Thread
 
 from parsec.backend.app import BackendApp
 from parsec.core.app import CoreApp
+from parsec.tools import b64_to_z85
 
-from tests.common import CookedSock, SERVER_SECRET, SERVER_PUBLIC
+from tests.common import CookedSock, SERVER_SECRET, SERVER_PUBLIC, AVAILABLE_USERS
 
 
 # Authentication is only enable through tcp
@@ -42,11 +43,10 @@ def backend_addr(backend):
 
 @pytest.fixture
 def alice(backend):
-    alice_public = zmq.utils.z85.decode(b"ve>exeUXhI:mNY%TAQ9>}?/%/=52fw[Kd$z6U{N<")
-    alice_private = zmq.utils.z85.decode(b"mttsOg+W3=[TQ94Le[eRc3V73!@7r)fs7gafQG[P")
     alice_id = 'alice@test.com'
     # Who cares about concurrency anyway ?
-    backend.db._pubkeys[alice_id] = alice_public
+    alice_private, alice_public = AVAILABLE_USERS[alice_id]
+    backend.db.pubkey_add(alice_id, alice_public)
     return {
         'id': alice_id,
         'private': alice_private,
@@ -58,9 +58,9 @@ def alice(backend):
 def alicesock(backend_addr, alice):
     ctx = zmq.Context.instance()
     socket = ctx.socket(zmq.REQ)
-    socket.curve_secretkey = zmq.utils.z85.encode(alice['private'])
-    socket.curve_publickey = zmq.utils.z85.encode(alice['public'])
-    socket.curve_serverkey = SERVER_PUBLIC
+    socket.curve_secretkey = b64_to_z85(alice['private'])
+    socket.curve_publickey = b64_to_z85(alice['public'])
+    socket.curve_serverkey = b64_to_z85(SERVER_PUBLIC)
     socket.connect(backend_addr)
     yield CookedSock(socket)
     socket.close()
@@ -68,11 +68,10 @@ def alicesock(backend_addr, alice):
 
 @pytest.fixture
 def bob(backend):
-    bob_public = zmq.utils.z85.decode(b"J3{a{k[}-9@Mo3$taFD.slOx?Wqt@H7<Xt:ygMmf")
-    bob_private = zmq.utils.z85.decode(b"3eju8rs-E1^j!Y)yx<X5*LZ)w!b:waZ:XF9LV4nf")
     bob_id = 'bob@test.com'
     # Who cares about concurrency anyway ?
-    backend.db._pubkeys[bob_id] = bob_public
+    bob_private, bob_public = AVAILABLE_USERS[bob_id]
+    backend.db.pubkey_add(bob_id, bob_public)
     return {
         'id': bob_id,
         'private': bob_private,
@@ -84,9 +83,9 @@ def bob(backend):
 def bobsock(backend_addr, bob):
     ctx = zmq.Context.instance()
     socket = ctx.socket(zmq.REQ)
-    socket.curve_secretkey = zmq.utils.z85.encode(bob['private'])
-    socket.curve_publickey = zmq.utils.z85.encode(bob['public'])
-    socket.curve_serverkey = SERVER_PUBLIC
+    socket.curve_secretkey = b64_to_z85(bob['private'])
+    socket.curve_publickey = b64_to_z85(bob['public'])
+    socket.curve_serverkey = b64_to_z85(SERVER_PUBLIC)
     socket.connect(backend_addr)
     yield CookedSock(socket)
     socket.close()

@@ -56,6 +56,11 @@ class CoreApp:
         self.zmqcontext = zmq.Context.instance()
         # Client socket listen on localhost, no need for authentication
         self.clients_socket = self.zmqcontext.socket(zmq.ROUTER)
+        self._get_user = self.config.get('GET_USER', self._get_user_from_confpath)
+
+    def _get_user_from_confpath(self, userid, password):
+        # TODO
+        raise NotImplementedError()
 
     def run(self):
         self.clients_socket.bind(self.config['CLIENTS_SOCKET_URL'])

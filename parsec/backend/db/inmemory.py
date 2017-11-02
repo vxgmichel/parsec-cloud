@@ -22,6 +22,11 @@ class InMemoryDB(BaseDB):
         except KeyError:
             raise PubKeyNotFound('Unknown user')
 
+    def pubkey_add(self, userid, pubkey):
+        if userid in self._pubkeys:
+            raise PubKeyError('A public key already exists for user %s' % userid)
+        self._pubkeys[userid] = pubkey
+
     def pubkey_auth(self, pubkey):
         for userid, userkey in self._pubkeys.items():
             if userkey == pubkey:

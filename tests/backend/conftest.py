@@ -6,9 +6,7 @@ from threading import Thread
 from parsec.backend.app import BackendApp
 from parsec.core.app import CoreApp
 
-
-SERVER_SECRET = b"CzXP)X*eM0<=*fz0#>oWiWEvv?ZMYN+=IzL)rHG>"
-SERVER_PUBLIC = b"^NgquxgGVp}vDq[pO<D3[qEt=Py&j@Em69T<[QYa"
+from tests.common import CookedSock, SERVER_SECRET, SERVER_PUBLIC
 
 
 # Authentication is only enable through tcp
@@ -43,35 +41,6 @@ def backend_addr(backend):
 
 
 @pytest.fixture
-def core(backend_addr, client_addr='tcp://127.0.0.1:0'):
-    # TODO: Use subprocess instead of daemon ?
-    core = CoreApp({
-        'SERVER_PUBLIC': SERVER_PUBLIC,
-        'TEST_CONTROL_PIPE': 'inproc://core-control.01',
-        'CLIENTS_SOCKET_URL': client_addr,
-        'BACKEND_URL': backend_addr,
-    })
-    thread = Thread(target=core.run, daemon=True)
-    thread.start()
-    ctrl = core.zmqcontext.socket(zmq.REQ)
-    ctrl.connect(core.config['TEST_CONTROL_PIPE'])
-    ctrl.send(b'status')
-    rep = ctrl.recv()
-    assert rep == b'ready'
-    yield core
-    ctrl.send(b'exit')
-    ctrl.recv()
-    ctrl.close()
-    thread.join()
-
-
-@pytest.fixture
-def core_addr(core):
-    # Binded port is dynamically choosen, so extract it from socket
-    return core.clients_socket.getsockopt(zmq.LAST_ENDPOINT).decode()
-
-
-@pytest.fixture
 def alice(backend):
     alice_public = zmq.utils.z85.decode(b"ve>exeUXhI:mNY%TAQ9>}?/%/=52fw[Kd$z6U{N<")
     alice_private = zmq.utils.z85.decode(b"mttsOg+W3=[TQ94Le[eRc3V73!@7r)fs7gafQG[P")
@@ -83,26 +52,6 @@ def alice(backend):
         'private': alice_private,
         'public': alice_public
     }
-
-
-class CookedSock:
-    def __init__(self, socket):
-        self.socket = socket
-
-    def send(self, msg, *frames):
-        self.socket.send_multipart((json.dumps(msg).encode(), *frames))
-
-    def recv(self, exframes=False):
-        repframes = self.socket.recv_multipart()
-        rep = json.loads(repframes[0].decode())
-        repexframes = repframes[1:]
-        if not exframes:
-            assert not repexframes
-            return rep
-        else:
-            if type(exframes) is int:
-                assert len(repexframes) == exframes
-            return (rep, *repexframes)
 
 
 @pytest.fixture

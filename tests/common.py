@@ -176,20 +176,24 @@ class CoreManager:
         self.addr = self.core.clients_socket.getsockopt(zmq.LAST_ENDPOINT).decode()
 
     @contextmanager
-    def connected_as(self, userid):
-        assert userid in AVAILABLE_USERS
+    def connected(self, authid=None, authpw=None):
         ctx = zmq.Context.instance()
         socket = ctx.socket(zmq.REQ)
         socket.connect(self.addr)
         cooked_sock = CookedSock(socket)
-        cooked_sock.send({'cmd': 'login', 'id': userid, 'password': ''})  # TODO
-        rep = cooked_sock.recv()
-        assert rep == {'status': 'ok'}
-        yield cooked_sock
-        cooked_sock.send({'cmd': 'logout'})
-        rep = cooked_sock.recv()
-        assert rep == {'status': 'ok'}
-        socket.close()
+        if authid:
+            assert authid in AVAILABLE_USERS
+            cooked_sock.send({'cmd': 'login', 'id': authid, 'password': authpw})
+            rep = cooked_sock.recv()
+            assert rep == {'status': 'ok'}
+        try:
+            yield cooked_sock
+            if authid:
+                cooked_sock.send({'cmd': 'logout'})
+                rep = cooked_sock.recv()
+                assert rep == {'status': 'ok'}
+        finally:
+            socket.close()
 
     def stop(self):
         self.ctrl.send(b'exit')
@@ -204,25 +208,28 @@ class CoreManager:
 
 class BaseBackendTest:
 
-    def setup(self, config=None, with_users=True):
-        import pdb; pdb.set_trace()
-        self.backend = BackendManager(config)
-        self.backend.start()
+    @classmethod
+    def setup_class(cls, config=None, with_users=True):
+        cls.backend = BackendManager(config)
+        cls.backend.start()
         if with_users:
             for userid, userkeys in AVAILABLE_USERS.items():
-                self.backend.backend.db.pubkey_add(
+                cls.backend.backend.db.pubkey_add(
                     userid, zmq.utils.z85.decode(userkeys[0]))
 
-    def teardown(self):
-        self.backend.stop()
+    @classmethod
+    def teardown_class(cls):
+        cls.backend.stop()
 
 
 class BaseCoreTest(BaseBackendTest):
-    def setup(self, config=None, backend_config=None, with_users=True):
-        super().setup(backend_config, with_users=with_users)
-        self.core = CoreManager(config)
-        self.core.start()
+    @classmethod
+    def setup_class(cls, config=None, backend_config=None, with_users=True):
+        super().setup_class(backend_config, with_users=with_users)
+        cls.core = CoreManager(config)
+        cls.core.start()
 
-    def teardown(self):
-        self.core.stop()
-        super().teardown()
+    @classmethod
+    def teardown_class(cls):
+        cls.core.stop()
+        super().teardown_class()

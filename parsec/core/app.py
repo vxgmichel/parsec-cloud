@@ -42,6 +42,7 @@ def _build_response(reqid, rep):
 class CoreApp:
     def __init__(self, config=None):
         self.config = CONFIG.copy()
+        self.extensions = {}
         self.zmqcontext = None
         self.clients_socket = None
         self.cmds = {}

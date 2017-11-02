@@ -1,3 +1,4 @@
+import pytest
 import zmq
 import json
 from unittest.mock import Mock
@@ -55,6 +56,24 @@ class TestControlAPI(BaseCoreTest):
             sock.send({"cmd": "login", "id": "john", "password": "S3CReT."})
             rep = sock.recv()
             assert rep == {"status": "unknown_user", 'label': 'No user known with id `john`'}
+
+    @pytest.mark.parametrize('cmd', [
+        'logout',
+
+        'file_create',
+        'file_read',
+        'file_write',
+        'stat',
+        'folder_create',
+        'move',
+        'delete',
+        'file_truncate',
+    ])
+    def test_must_be_logged_cmds(self, cmd):
+        with self.core.connected() as sock:
+            sock.send({"cmd": cmd})
+            rep = sock.recv()
+            assert rep == {"status": "not_logged", 'label': 'Must be logged in to use this command'}
 
 
 class TestAlreadyLogged(BaseCoreTest):

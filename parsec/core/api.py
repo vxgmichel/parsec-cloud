@@ -26,7 +26,27 @@ class Control:
         app.register_cmd('get_core_state', self._cmd_GET_CORE_STATE)
         app.register_cmd('logout', self._cmd_LOGOUT)
 
+        # FS api
+        app.register_cmd('file_create', self._fs_proxy_factory('file_create'))
+        app.register_cmd('file_read', self._fs_proxy_factory('file_read'))
+        app.register_cmd('file_write', self._fs_proxy_factory('file_write'))
+        app.register_cmd('stat', self._fs_proxy_factory('stat'))
+        app.register_cmd('folder_create', self._fs_proxy_factory('folder_create'))
+        app.register_cmd('move', self._fs_proxy_factory('move'))
+        app.register_cmd('delete', self._fs_proxy_factory('delete'))
+        app.register_cmd('file_truncate', self._fs_proxy_factory('file_truncate'))
+
+    def _fs_proxy_factory(self, cmd):
+        def proxy_cmd(app, req):
+            if not self.user_id:
+                raise ParsecError('not_logged', 'Must be logged in to use this command')
+            else:
+                return getattr(self.fs, '_cmd_%s' % cmd.upper())(app, req)
+
+        return proxy_cmd
+
     def _cmd_REGISTER(self, app, req):
+        raise NotImplementedError()
         return {'status': 'ok'}
 
     def _cmd_LOGIN(self, app, req):
@@ -45,6 +65,7 @@ class Control:
 
 
     def _cmd_GET_AVAILABLE_LOGINS(self, app, req):
+        raise NotImplementedError()
         return {'status': 'ok'}
 
 

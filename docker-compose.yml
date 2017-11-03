@@ -1,0 +1,27 @@
+version: '3'
+services:
+    parsec_db:
+        image: postgres:10-alpine
+        environment:
+            PGDATA: /var/lib/postgresql/data/pgdata
+            POSTGRES_DB: parsec
+        volumes:
+            - parsec_db_data:/var/lib/postgresql/data
+    parsec_block_store:
+        image: minio/minio
+        volumes:
+            - parsec_block_store_data:/data
+        command: minio server /data
+    parsec_backend:
+        build: .
+        links:
+            - parsec_db:parsec_db
+            - parsec_block_store:parsec_block_store
+        ports:
+            - 8000:8000
+        environment:
+            PARSEC_DB_URL: "postgres://postgres:postgres@parsec_db/parsec"
+            PARSEC_BLOCK_STORE_URL: "parsec_block_store:9000"
+volumes:
+    parsec_db_data:
+    parsec_block_store_data:

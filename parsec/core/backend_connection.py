@@ -26,10 +26,6 @@ class BackendConnection:
         # TODO: check connection is ok ?
 
     def stop(self):
-        # TODO: kill backend_sock, but how ?
-        # self.backend_sock.stop()
-        self.backend_sock = None
-
-    def __del__(self):
-        if self.backend_sock:
-            self.stop()
+        # Note the zmq device will be automatically killed once the
+        # zmq context terminated, so nothing to do here
+        pass

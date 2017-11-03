@@ -26,7 +26,8 @@ class BackendConnection:
         # TODO: check connection is ok ?
 
     def stop(self):
-        self.backend_sock.stop()
+        # TODO: kill backend_sock, but how ?
+        # self.backend_sock.stop()
         self.backend_sock = None
 
     def __del__(self):

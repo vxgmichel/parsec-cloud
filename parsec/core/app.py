@@ -54,10 +54,16 @@ class CoreApp:
         init_control_api(self)
 
         # Configure auth
-        self.zmqcontext = zmq.Context.instance()
+        self.zmqcontext = self.config['ZMQ_CONTEXT_FACTORY']()
         # Client socket listen on localhost, no need for authentication
         self.clients_socket = self.zmqcontext.socket(zmq.ROUTER)
         self._get_user = self.config.get('GET_USER', self._get_user_from_confpath)
+
+    def _teardown(self):
+        self.zmqcontext.term()
+
+    def __del__(self):
+        self._teardown()
 
     def _get_user_from_confpath(self, userid, password):
         # TODO

@@ -68,7 +68,7 @@ class BackendApp:
         init_api(self)
 
         # Configure auth
-        self.zmqcontext = zmq.Context.instance()
+        self.zmqcontext = self.config['ZMQ_CONTEXT_FACTORY']()
         self.authenticator = authenticator_factory(self)
         # self.authenticator.configure_curve(domain='*', location=public_keys_dir)
 
@@ -76,6 +76,12 @@ class BackendApp:
         self.cmds_socket.curve_secretkey = b64_to_z85(self.config['SERVER_SECRET'])
         self.cmds_socket.curve_publickey = b64_to_z85(self.config['SERVER_PUBLIC'])
         self.cmds_socket.curve_server = True  # must come before bind
+
+    def _teardown(self):
+        self.zmqcontext.term()
+
+    def __del__(self):
+        self._teardown()
 
     def run(self):
         self.authenticator.start()

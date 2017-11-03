@@ -43,6 +43,7 @@ class CookedSock:
 class BackendManager:
     def __init__(self, config):
         self.config = {
+            'ZMQ_CONTEXT_FACTORY': zmq.Context,
             'SERVER_PUBLIC': SERVER_PUBLIC,
             'SERVER_SECRET': SERVER_SECRET,
             'TEST_CONTROL_PIPE': 'inproc://backend-control.01',
@@ -69,9 +70,9 @@ class BackendManager:
         self.addr = self.backend.cmds_socket.getsockopt(zmq.LAST_ENDPOINT).decode()
 
     @contextmanager
-    def connected_as(self, userid):
+    def connected(self, userid):
         userpublic, userprivate = AVAILABLE_USERS[userid]
-        ctx = zmq.Context.instance()
+        ctx = zmq.Context()
         socket = ctx.socket(zmq.REQ)
         socket.curve_secretkey = b64_to_z85(userprivate)
         socket.curve_publickey = b64_to_z85(userpublic)
@@ -94,6 +95,7 @@ class BackendManager:
 class CoreManager:
     def __init__(self, config):
         self.config = {
+            'ZMQ_CONTEXT_FACTORY': zmq.Context,
             'GET_USER': self._get_user,
             'SERVER_PUBLIC': SERVER_PUBLIC,
             'TEST_CONTROL_PIPE': 'inproc://core-control.01',
@@ -126,7 +128,7 @@ class CoreManager:
 
     @contextmanager
     def connected(self, authid=None, authpw=None):
-        ctx = zmq.Context.instance()
+        ctx = zmq.Context()
         socket = ctx.socket(zmq.REQ)
         socket.connect(self.addr)
         cooked_sock = CookedSock(socket)
@@ -163,8 +165,10 @@ class BaseBackendTest:
         cls.backend.start()
         if with_users:
             for userid, userkeys in AVAILABLE_USERS.items():
-                cls.backend.backend.db.pubkey_add(
-                    userid, zmq.utils.z85.decode(userkeys[0]))
+                cls.backend.backend.db.pubkey_add(userid, userkeys[0])
+            cls.available_users = AVAILABLE_USERS.copy()
+        else:
+            cls.available_users = {}
 
     @classmethod
     def teardown_class(cls):

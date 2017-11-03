@@ -33,6 +33,7 @@ def backend(socket_addr='tcp://127.0.0.1:0'):
     ctrl.recv()
     ctrl.close()
     thread.join()
+    backend._teardown()
 
 
 @pytest.fixture
@@ -56,7 +57,7 @@ def alice(backend):
 
 @pytest.fixture
 def alicesock(backend_addr, alice):
-    ctx = zmq.Context.instance()
+    ctx = zmq.Context()
     socket = ctx.socket(zmq.REQ)
     socket.curve_secretkey = b64_to_z85(alice['private'])
     socket.curve_publickey = b64_to_z85(alice['public'])
@@ -81,7 +82,7 @@ def bob(backend):
 
 @pytest.fixture
 def bobsock(backend_addr, bob):
-    ctx = zmq.Context.instance()
+    ctx = zmq.Context()
     socket = ctx.socket(zmq.REQ)
     socket.curve_secretkey = b64_to_z85(bob['private'])
     socket.curve_publickey = b64_to_z85(bob['public'])

@@ -1,7 +1,9 @@
+import zmq
 from os import environ
 
 
 CONFIG = {
+    'ZMQ_CONTEXT_FACTORY': zmq.Context.instance,
     'SERVER_PUBLIC': '',
     'SERVER_SECRET': '',
     'TEST_CONTROL_PIPE': '',

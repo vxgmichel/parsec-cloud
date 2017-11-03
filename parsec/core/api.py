@@ -13,7 +13,6 @@ class cmd_LOGIN_Schema(BaseCmdSchema):
 
 class Control:
     def __init__(self):
-        self.user_id = None
         self.user_pubkey = None
         self.user_privkey = None
         self.fs = None
@@ -54,8 +53,12 @@ class Control:
 
     def _cmd_LOGIN(self, app, req):
         msg = cmd_LOGIN_Schema().load(req.msg)
-        if self.user_id:
-            raise ParsecError('already_logged', 'Already logged in as `%s`' % self.user_id)
+        try:
+            userid, _, _ = self.app.extensions['logged_user']
+        except TypeError:
+            pass
+        else:
+            raise ParsecError('already_logged', 'Already logged in as `%s`' % userid)
         userkeys = self.app.config['GET_USER'](msg['id'], msg['password'])
         if not userkeys:
             raise ParsecError('unknown_user', 'No user known with id `%s`' % msg['id'])
@@ -63,6 +66,7 @@ class Control:
         self.app.extensions['logged_user'] = (msg['id'], *userkeys)
         self.backend_connection = BackendConnection(self.app)
         self.backend_connection.start()
+        # TODO: check connection to the backend ?
         self.fs = FSPipeline()
         self.fs.start()
         return {'status': 'ok'}
@@ -72,10 +76,14 @@ class Control:
         return {'status': 'ok'}
 
     def _cmd_GET_CORE_STATE(self, app, req):
-        return {'status': 'ok', 'online': True, 'logged': self.user_id}
+        try:
+            userid, _, _ = self.app.extensions['logged_user']
+        except TypeError:
+            userid = None
+        return {'status': 'ok', 'online': True, 'logged': userid}
 
     def _cmd_LOGOUT(self, app, req):
-        if not self.user_id:
+        if not self.app.extensions['logged_user']:
             raise ParsecError('not_logged', 'Must be logged in to use this command')
         self.fs.stop()
         self.backend_connection.stop()

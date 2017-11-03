@@ -6,7 +6,6 @@ RUN apk add --no-cache \
 ADD . /code
 WORKDIR /code
 
-RUN pip install -r requirements.txt
 RUN python setup.py install
 
 EXPOSE 8000

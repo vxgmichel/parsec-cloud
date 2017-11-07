@@ -12,4 +12,4 @@ class EndPoint(Component):
 
     def process(self, msg):
         msg.receiver = ComponentNames.REPLY
-        self.reply.send(str(msg))
+        self.reply.send(msg.dumps())

@@ -10,10 +10,8 @@ from parsec.core.components import (
 )
 
 
-class FSPipeline(object):
-    def __init__(self, app, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
+class FSPipeline():
+    def __init__(self, app):
         self.context = app.zmqcontext
 
         self.p2p = Network(
@@ -39,7 +37,7 @@ class FSPipeline(object):
             sender='fspipeline',
             receiver=self.p2p.entrypoint.name
         )
-        self.entrypoint.send(str(msg))
+        self.entrypoint.send(msg.dumps())
         self.endpoint.recv()  # ack
         self.p2p.stop()
 
@@ -50,7 +48,7 @@ class FSPipeline(object):
             type=type,
             payload=req
         )
-        self.entrypoint.send(str(msg))
+        self.entrypoint.send(msg.dumps())
         response = self.endpoint.recv()
 
         return {'status': response.status}
@@ -62,7 +60,7 @@ class FSPipeline(object):
             type=type,
             payload=req
         )
-        self.entrypoint.send(str(msg))
+        self.entrypoint.send(msg.dumps())
 
         return {'status': 'ok'}
 

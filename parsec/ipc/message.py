@@ -8,11 +8,11 @@ class Message(object):
     sender = attr.ib()
     receiver = attr.ib()
 
-    def __str__(self):
+    def dumps(self):
         return pickle.dumps(self)
 
     @staticmethod
-    def parse(raw):
+    def loads(raw):
         return pickle.loads(raw)
 
 
@@ -25,7 +25,6 @@ class ExitMessage(Message):
 class Command(Message):
     type = attr.ib()
     payload = attr.ib()
-
 
 
 class CommandType(IntEnum):

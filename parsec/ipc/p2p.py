@@ -42,7 +42,7 @@ class Peer(Thread):
                 pusher = pushers.get(msg.receiver)
 
                 if pusher is not None:
-                    pusher.send(str(msg))
+                    pusher.send(msg.dumps())
 
         except Exception:
             print(
@@ -56,7 +56,7 @@ class Peer(Thread):
         while receiving:
             try:
                 raw_msg = puller.recv()
-                msg = Message.parse(raw_msg)
+                msg = Message.loads(raw_msg)
 
                 if msg is not None:
                     if isinstance(msg, ExitMessage):
@@ -66,7 +66,7 @@ class Peer(Thread):
                         pusher = pushers.get(new_msg.receiver)
 
                         if pusher is not None:
-                            pusher.send(str(new_msg))
+                            pusher.send(new_msg.dumps())
 
             except Exception:
                 print('An unexpected error occured in <<', self.name, '>>:')
@@ -79,7 +79,7 @@ class Peer(Thread):
                 pusher = pushers.get(msg.receiver)
 
                 if pusher is not None:
-                    pusher.send(str(msg))
+                    pusher.send(msg.dumps())
 
         except Exception:
             print(

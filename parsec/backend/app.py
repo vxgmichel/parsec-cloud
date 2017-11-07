@@ -120,6 +120,12 @@ class BackendApp:
                 sock.close()
             self.authenticator.stop()
 
+    def _anonymous_cmd(self, app, req):
+        if req.msg['cmd'] == 'ping':
+            return {"status": "ok"}
+        else:
+            return {"status": "unknown_cmd"}
+
     def _handle_cmd(self, frames):
         print('REQ: ', [f.bytes for f in frames])
         req = _build_request(frames)
@@ -127,7 +133,11 @@ class BackendApp:
             repframes = (frames[0], b'', b'{"status": "bad_msg"}')
         else:
             try:
-                cmd = self.cmds[req.msg['cmd']]
+                if req.userid == '<Anonymous>':
+                    # Anonymous connexion !
+                    cmd = self._anonymous_cmd
+                else:
+                    cmd = self.cmds[req.msg['cmd']]
             except KeyError:
                 repframes = _build_response(req.reqid, {"status": "unknown_cmd"})
             else:

@@ -46,12 +46,10 @@ def backend_addr(backend):
 def alice(backend):
     alice_id = 'alice@test.com'
     # Who cares about concurrency anyway ?
-    alice_private, alice_public = AVAILABLE_USERS[alice_id]
-    backend.db.pubkey_add(alice_id, alice_public)
+    backend.db.pubkey_add(alice_id, AVAILABLE_USERS[alice_id]['public'])
     return {
         'id': alice_id,
-        'private': alice_private,
-        'public': alice_public
+        **AVAILABLE_USERS[alice_id]
     }
 
 
@@ -71,12 +69,10 @@ def alicesock(backend_addr, alice):
 def bob(backend):
     bob_id = 'bob@test.com'
     # Who cares about concurrency anyway ?
-    bob_private, bob_public = AVAILABLE_USERS[bob_id]
-    backend.db.pubkey_add(bob_id, bob_public)
+    backend.db.pubkey_add(bob_id, AVAILABLE_USERS[bob_id]['public'])
     return {
         'id': bob_id,
-        'private': bob_private,
-        'public': bob_public
+        **AVAILABLE_USERS[bob_id]
     }
 
 

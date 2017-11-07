@@ -1,6 +1,4 @@
 import pytest
-import zmq
-import json
 from unittest.mock import Mock
 
 from tests.common import BaseCoreTest
@@ -12,7 +10,7 @@ class TestControlAPI(BaseCoreTest):
         with self.core.connected() as sock:
             sock.send({"cmd": "get_core_state"})
             rep = sock.recv()
-            assert rep == {"status": "ok", "online": True, "logged": None}
+            assert rep == {"status": "ok", "online": False, "logged": None}
 
     def test_bad_login(self):
         with self.core.connected() as sock:
@@ -50,6 +48,18 @@ class TestControlAPI(BaseCoreTest):
                 'label': 'Already logged in as `alice@test.com`'
             }
 
+    def test_backend_offline(self):
+        with self.core.connected("alice@test.com") as sock:
+            sock.send({"cmd": "get_core_state"})
+            rep = sock.recv()
+            assert rep == {"status": "ok", "online": True, "logged": "alice@test.com"}
+            self.backend.stop()
+            self.backend.stop = lambda: None  # Prevent test teardown from crashing
+            sock.send({"cmd": "get_core_state"})
+            rep = sock.recv()
+            assert rep == {"status": "ok", "online": False, "logged": "alice@test.com"}
+
+
 class TestLogginAndOut(BaseCoreTest):
     @classmethod
     def setup_class(cls):
@@ -83,4 +93,4 @@ class TestLogginAndOut(BaseCoreTest):
         with self.core.connected() as sock:
             sock.send({"cmd": "get_core_state"})
             rep = sock.recv()
-            assert rep == {"status": "ok", "online": True, "logged": None}
+            assert rep == {"status": "ok", "online": False, "logged": None}

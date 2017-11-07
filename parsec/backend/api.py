@@ -1,9 +1,15 @@
 from parsec.backend import vlob, user_vlob, message, group, pubkey, blockstore
 
 
+def _api_ping(app, req):
+    return {'status': 'ok'}
+
+
 def init_api(app):
     # app.register_cmd('subscribe_event', api_subscribe_event)
     # app.register_cmd('unsubscribe_event', api_unsubscribe_event)
+
+    app.register_cmd('ping', _api_ping)
 
     app.register_cmd('blockstore_get_url', blockstore.api_blockstore_get_url)
     if app.config['BLOCKSTORE_URL'] == '<inbackend>':

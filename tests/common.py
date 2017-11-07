@@ -14,9 +14,8 @@ SERVER_PUBLIC = '0kOyAGdHvgH6EEuhT6WYyvCMABqf9QFlfUOQkOX5M0w='
 
 
 AVAILABLE_USERS = {
-    # userid: (public_key, private_key)
-    'alice@test.com': ('RYZkAjQvy2jxnQy9ksgPdSV4oBrWixbTL7LzNDCXyaE=', 'YP9vpi2ijHrH9M/FrHeaNvuKgefNiU3Q8USCahTApiM='),
-    'bob@test.com': ('CdrhQlUPX+fRMFlGawb77NuLiNrUAWwdwCnoNpRS99o=', 'jCgpHEEU0eH9ym8bWp1PoVfo2yu1bQGxGHo9cGpk4F8='),
+    'alice@test.com': {'private': 'RYZkAjQvy2jxnQy9ksgPdSV4oBrWixbTL7LzNDCXyaE=', 'public': 'YP9vpi2ijHrH9M/FrHeaNvuKgefNiU3Q8USCahTApiM='},
+    'bob@test.com': {'private': 'CdrhQlUPX+fRMFlGawb77NuLiNrUAWwdwCnoNpRS99o=', 'public': 'jCgpHEEU0eH9ym8bWp1PoVfo2yu1bQGxGHo9cGpk4F8='},
 }
 
 
@@ -71,11 +70,11 @@ class BackendManager:
 
     @contextmanager
     def connected(self, userid):
-        userpublic, userprivate = AVAILABLE_USERS[userid]
         ctx = zmq.Context()
         socket = ctx.socket(zmq.REQ)
-        socket.curve_secretkey = b64_to_z85(userprivate)
-        socket.curve_publickey = b64_to_z85(userpublic)
+        userkeys = AVAILABLE_USERS[userid]
+        socket.curve_secretkey = b64_to_z85(userkeys['private'])
+        socket.curve_publickey = b64_to_z85(userkeys['public'])
         socket.curve_serverkey = b64_to_z85(SERVER_PUBLIC)
         socket.connect(self.addr)
         yield CookedSock(socket)
@@ -165,7 +164,7 @@ class BaseBackendTest:
         cls.backend.start()
         if with_users:
             for userid, userkeys in AVAILABLE_USERS.items():
-                cls.backend.backend.db.pubkey_add(userid, userkeys[0])
+                cls.backend.backend.db.pubkey_add(userid, userkeys['public'])
             cls.available_users = AVAILABLE_USERS.copy()
         else:
             cls.available_users = {}

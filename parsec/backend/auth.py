@@ -41,13 +41,19 @@ class DBAuthenticator(Authenticator):
         self.__app = app
 
     def _retrieve_identity(self, domain, client_key):
-        if self.__app.db.pubkey_auth(b64encode(client_key).decode()):
+        b64key = b64encode(client_key).decode()
+        if self.__app.db.pubkey_auth(b64key):
+            return True, b'OK'
+        elif self.__app.config['ANONYMOUS_PUBKEY'] == b64key:
             return True, b'OK'
         else:
             return False, b"Unknown key"
 
     def curve_user_id(self, client_key):
-        return self.__app.db.pubkey_auth(b64encode(client_key).decode())
+        b64key = b64encode(client_key).decode()
+        if self.__app.config['ANONYMOUS_PUBKEY'] == b64key:
+            return '<Anonymous>'
+        return self.__app.db.pubkey_auth(b64key)
 
     def _authenticate_curve(self, domain, client_key):
         """CURVE ZAP authentication"""

@@ -1,7 +1,8 @@
+import zmq
 from marshmallow import fields
 
 from parsec.exceptions import ParsecError
-from parsec.tools import BaseCmdSchema
+from parsec.tools import BaseCmdSchema, b64_to_z85
 from parsec.core.fs import FSPipeline
 from parsec.core.backend_connection import BackendConnection
 
@@ -54,7 +55,7 @@ class Control:
     def _cmd_LOGIN(self, app, req):
         msg = cmd_LOGIN_Schema().load(req.msg)
         try:
-            userid, _, _ = self.app.extensions['logged_user']
+            userid, _ = self.app.extensions['logged_user']
         except TypeError:
             pass
         else:
@@ -63,7 +64,7 @@ class Control:
         if not userkeys:
             raise ParsecError('unknown_user', 'No user known with id `%s`' % msg['id'])
         # TODO: use try/except to avoid inconsistant state on init crash ?
-        self.app.extensions['logged_user'] = (msg['id'], *userkeys)
+        self.app.extensions['logged_user'] = (msg['id'], userkeys)
         self.backend_connection = BackendConnection(self.app)
         self.backend_connection.start()
         # TODO: check connection to the backend ?
@@ -77,10 +78,29 @@ class Control:
 
     def _cmd_GET_CORE_STATE(self, app, req):
         try:
-            userid, _, _ = self.app.extensions['logged_user']
-        except TypeError:
+            userid, _ = self.app.extensions['logged_user']
+            # Create a socket connection just for this
+            sock = self.app.zmqcontext.socket(zmq.REQ)
+            sock.setsockopt(
+                zmq.CURVE_SERVERKEY, b64_to_z85(self.app.config['SERVER_PUBLIC']))
+            sock.setsockopt(
+                zmq.CURVE_PUBLICKEY, b64_to_z85(self.app.config['ANONYMOUS_PUBKEY']))
+            sock.setsockopt(
+                zmq.CURVE_SECRETKEY, b64_to_z85(self.app.config['ANONYMOUS_PRIVKEY']))
+            sock.setsockopt(zmq.LINGER, 0)
+            sock.connect(self.app.config['BACKEND_URL'])
+            sock.send_json({"cmd": "ping"})
+            poller = zmq.Poller()
+            poller.register(sock, zmq.POLLIN)
+            if poller.poll(1000):
+                rep = sock.recv_json()
+                online = (rep == {'status': 'ok'})
+            else:  # Timeout
+                online = False
+        except Exception:
             userid = None
-        return {'status': 'ok', 'online': True, 'logged': userid}
+            online = False
+        return {'status': 'ok', 'online': online, 'logged': userid}
 
     def _cmd_LOGOUT(self, app, req):
         if not self.app.extensions['logged_user']:

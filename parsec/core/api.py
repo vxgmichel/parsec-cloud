@@ -67,7 +67,7 @@ class Control:
         self.backend_connection = BackendConnection(self.app)
         self.backend_connection.start()
         # TODO: check connection to the backend ?
-        self.fs = FSPipeline()
+        self.fs = FSPipeline(self.app)
         self.fs.start()
         return {'status': 'ok'}
 

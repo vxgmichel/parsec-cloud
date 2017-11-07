@@ -1,7 +1,7 @@
-from parsec.ipc.message import ExitMessage
+from parsec.ipc.message import Message, ExitMessage
+from threading import Thread
 from sys import stderr
 import traceback
-import pickle
 import zmq
 
 
@@ -42,10 +42,9 @@ class Peer(Thread):
                 pusher = pushers.get(msg.receiver)
 
                 if pusher is not None:
-                    raw_msg = pickle.dumps(msg)
-                    pusher.send(raw_msg)
+                    pusher.send(str(msg))
 
-        except Exception as err:
+        except Exception:
             print(
                 'An unexpected error occured while initializing <<',
                 self.name,
@@ -57,20 +56,19 @@ class Peer(Thread):
         while receiving:
             try:
                 raw_msg = puller.recv()
-                msg = pickle.loads(msg)
+                msg = Message.parse(raw_msg)
 
                 if msg is not None:
                     if isinstance(msg, ExitMessage):
                         receiving = False
 
                     for new_msg in self.component.process(msg):
-                        pusher = pushers.get(new_msg.destination)
+                        pusher = pushers.get(new_msg.receiver)
 
                         if pusher is not None:
-                            new_raw_msg = pickle.dumps(new_msg)
-                            pusher.send(new_raw_msg)
+                            pusher.send(str(new_msg))
 
-            except Exception as err:
+            except Exception:
                 print('An unexpected error occured in <<', self.name, '>>:')
                 traceback.print_exc(file=stderr)
 
@@ -81,10 +79,9 @@ class Peer(Thread):
                 pusher = pushers.get(msg.receiver)
 
                 if pusher is not None:
-                    raw_msg = pickle.dumps(msg)
-                    pusher.send(raw_msg)
+                    pusher.send(str(msg))
 
-        except Exception as err:
+        except Exception:
             print(
                 'An unexpected error occured while deinitializing <<',
                 self.name,
@@ -106,7 +103,7 @@ class Network(object):
                 for ocmp in components
                 if ocmp is not cmp
             ]
-            th = Peer(context, cmp.name, cmp, pushers=cbnames)
+            th = Peer(context, cmp.name, cmp, pushers=cmpnames)
             self.peers.append(th)
 
     @property

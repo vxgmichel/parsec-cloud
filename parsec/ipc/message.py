@@ -1,4 +1,5 @@
 from enum import IntEnum, auto
+import pickle
 import attr
 
 
@@ -7,6 +8,13 @@ class Message(object):
     sender = attr.ib()
     receiver = attr.ib()
 
+    def __str__(self):
+        return pickle.dumps(self)
+
+    @staticmethod
+    def parse(raw):
+        return pickle.loads(raw)
+
 
 @attr.s(slots=True)
 class ExitMessage(Message):
@@ -14,53 +22,23 @@ class ExitMessage(Message):
 
 
 @attr.s(slots=True)
+class Command(Message):
+    type = attr.ib()
+    payload = attr.ib()
+
+
+
+class CommandType(IntEnum):
+    FILE_CREATE = auto()
+    FILE_READ = auto()
+    FILE_WRITE = auto()
+    STAT = auto()
+    FOLDER_CREATE = auto()
+    MOVE = auto()
+    DELETE = auto()
+    FILE_TRUNCATE = auto()
+
+
+@attr.s(slots=True)
 class Response(Message):
     status = attr.ib()
-    content = attr.ib(default=None)
-
-    class Status(IntEnum):
-        OK = auto()
-        UNKNOWN_COMMAND = auto()
-        NOT_FOUND = auto()
-        UNKNOWN_PATH = auto()
-        NOT_A_FILE = auto()
-
-
-@attr.s(slots=True)
-class ReadUserManifest(Message):
-    pass
-
-
-@attr.s(slots=True)
-class ReadFileManifest(Message):
-    id = attr.ib()
-
-
-@attr.s(slots=True)
-class Command(Message):
-    path = attr.ib()
-
-
-@attr.s(slots=True)
-class StatCommand(Command):
-    pass
-
-
-@attr.s(slots=True)
-class ReadFileCommand(Command):
-    info = attr.ib(default=None)
-
-
-@attr.s(slots=True)
-class WriteFileCommand(Command):
-    pass
-
-
-@attr.s(slots=True)
-class CreateFileCommand(Command):
-    pass
-
-
-@attr.s(slots=True)
-class DeleteCommand(Command):
-    pass

@@ -2,6 +2,7 @@ import attr
 import base64
 import json
 import trio
+from struct import pack, unpack
 from pendulum import Pendulum
 from nacl.public import PrivateKey
 from nacl.secret import SecretBox
@@ -24,19 +25,22 @@ class CookedSocket:
         await self.sockstream.aclose()
 
     async def send(self, msg):
-        await self.sockstream.send_all(json.dumps(msg).encode() + b'\n')
+        payload = json.dumps(msg).encode()
+        head = pack('<l', len(payload))
+        await self.sockstream.send_all(head)
+        await self.sockstream.send_all(payload)
 
     async def recv(self):
-        raw = b''
-        # TODO: handle message longer than BUFFSIZE...
-        raw = await self.sockstream.receive_some(BUFFSIZE)
-        if not raw:
+        head = await self.sockstream.receive_some(4)
+        if not head:
             # Empty body should normally never occurs, though it is sent
             # when peer closes connection
             raise trio.BrokenStreamError('Peer has closed connection')
-        while raw[-1] != ord(b'\n'):
-            raw += await self.sockstream.receive_some(BUFFSIZE)
-        return json.loads(raw[:-1].decode())
+        payload_size, = unpack('<l', head)
+        payload = await self.sockstream.receive_some(payload_size)
+        if not payload:
+            raise trio.BrokenStreamError('Peer has closed connection')
+        return json.loads(payload.decode())
 
 
 def to_jsonb64(raw: bytes):

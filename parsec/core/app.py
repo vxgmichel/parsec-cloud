@@ -8,7 +8,7 @@ from json import JSONDecodeError
 
 from parsec.core.fs import fs_factory
 from parsec.core.fs_api import FSApi
-from parsec.core.devices_manager import DevicesManager, DeviceLoadingError
+from parsec.core.devices_manager import DevicesManager, DeviceLoadingError, DeviceSavingError
 from parsec.core.manifests_manager import ManifestsManager
 from parsec.core.blocks_manager import BlocksManager
 from parsec.core.backend_connection import (
@@ -18,6 +18,7 @@ from parsec.schema import BaseCmdSchema, fields, validate
 
 
 logger = logbook.Logger("parsec.core.app")
+user_device_name_regexp = r'\A[a-zA-Z][a-zA-Z0-9\-_]*\Z'
 
 
 class cmd_LOGIN_Schema(BaseCmdSchema):
@@ -26,7 +27,7 @@ class cmd_LOGIN_Schema(BaseCmdSchema):
 
 
 class cmd_USER_INVITE_Schema(BaseCmdSchema):
-    user_id = fields.String(required=True)
+    user_id = fields.String(required=True, validate=validate.Regexp(user_device_name_regexp))
 
 
 # TODO: change id to user_id/device_name
@@ -47,7 +48,7 @@ class cmd_EVENT_SUBSCRIBE_Schema(BaseCmdSchema):
 
 class cmd_DEVICE_CONFIGURE_Schema(BaseCmdSchema):
     # TODO: add regex validation
-    device_id = fields.String(required=True)
+    device_id = fields.String(required=True, validate=validate.Regexp(user_device_name_regexp))
     password = fields.String(required=True)
     configure_device_token = fields.String(required=True)
 
@@ -211,8 +212,11 @@ class CoreApp:
             })
         except BackendNotAvailable:
             return {'status': 'backend_not_availabled'}
-        self.devices_manager.register_new_device(
-            msg['id'], user_privkey.encode(), device_signkey.encode(), msg['password'])
+        try:
+            self.devices_manager.register_new_device(
+                msg['id'], user_privkey.encode(), device_signkey.encode(), msg['password'])
+        except DeviceSavingError:
+            return {'status': 'device_config_saving_error'}
         return rep
 
     async def _backend_passthrough(self, req):

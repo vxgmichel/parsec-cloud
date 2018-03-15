@@ -212,11 +212,12 @@ class CoreApp:
             })
         except BackendNotAvailable:
             return {'status': 'backend_not_availabled'}
-        try:
-            self.devices_manager.register_new_device(
-                msg['id'], user_privkey.encode(), device_signkey.encode(), msg['password'])
-        except DeviceSavingError:
-            return {'status': 'device_config_saving_error'}
+        if rep['status'] == 'ok':
+            try:
+                self.devices_manager.register_new_device(
+                    msg['id'], user_privkey.encode(), device_signkey.encode(), msg['password'])
+            except DeviceSavingError:
+                return {'status': 'device_config_saving_error'}
         return rep
 
     async def _backend_passthrough(self, req):

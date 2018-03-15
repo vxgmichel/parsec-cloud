@@ -4,7 +4,6 @@ from hypothesis import strategies as st, note
 from hypothesis.stateful import Bundle, rule
 
 from parsec.core.app import user_device_name_regexp
-from parsec.utils import to_jsonb64, from_jsonb64
 
 from tests.common import (
     connect_core, core_factory, backend_factory, run_app
@@ -16,16 +15,20 @@ validator = validate.Regexp(user_device_name_regexp)
 
 
 class UserOracle:
+
     def __init__(self):
-        self.connected = 'alice'
+        self.connected = 'alice@test'
         self.users = {}
+        self.devices_config = []
         self.invitations = {}
         self.tokens = {}
 
     def login(self, user, password):
+        user_id = user.rsplit('@', 1)[0]
         if self.connected:
             return 'already_logged'
-        elif user in self.users and password == self.users[user]:
+        elif (user in self.devices_config and
+                user_id in self.users and password == self.users[user_id]):
             self.connected = user
             return 'ok'
         else:
@@ -38,10 +41,16 @@ class UserOracle:
         else:
             return 'login_required'
 
+    def list_available_logins(self):
+        return self.devices_config
+
+    def info(self):
+        return (self.connected, self.connected is not None)
+
     def invite(self, user):
-        if user in self.users:
-            return 'Already exist'
-        elif self.connected:
+        if self.connected:
+            if user in self.users:
+                return 'already_exists'
             try:
                 validator(user)
             except ValidationError:
@@ -67,17 +76,21 @@ class UserOracle:
             validator(device)
         except ValidationError:
             return 'bad_message'
-        if user + '@' + device in self.users:
+        user_device = user + '@' + device
+        if user in self.users:
+            return 'already_exists_error'
+        elif user_device in self.devices_config:
             return 'device_config_saving_error'
         elif user in self.invitations and token == self.invitations[user]:
             del self.invitations[user]
             del self.tokens[token]
-            self.users[user + '@' + device] = password
+            self.users[user] = password
+            self.devices_config.append(user_device)
             return 'ok'
         elif user in self.invitations and token != self.invitations[user]:
             return 'claim_error'
         else:
-            return 'already_exists_error'
+            return 'not_found_error'
 
 
 @pytest.mark.slow
@@ -165,6 +178,28 @@ async def test_online(
             expected_status = self.user_oracle.logout()
             assert rep['status'] == expected_status
 
+        @rule()
+        @skip_on_broken_stream
+        def list_available_logins(self):
+            rep = self.core_cmd({
+                'cmd': 'list_available_logins',
+            })
+            note(rep)
+            expected_devices = self.user_oracle.list_available_logins()
+            assert len(rep) == 2
+            assert rep['status'] == 'ok'
+            assert set(rep['devices']) == set(expected_devices)
+
+        @rule()
+        @skip_on_broken_stream
+        def info(self):
+            rep = self.core_cmd({
+                'cmd': 'info',
+            })
+            note(rep)
+            expected_result = self.user_oracle.info()
+            assert rep == {'status': 'ok', 'id': expected_result[0], 'loaded': expected_result[1]}
+
         @rule(target=Invitations, user_id=st_user_device_name)
         @skip_on_broken_stream
         def invite(self, user_id):
@@ -179,21 +214,30 @@ async def test_online(
                 self.user_oracle.set_invitation_token(user_id, rep['invitation_token'])
                 return (user_id, rep['invitation_token'])
 
-        @rule(target=Users, invitation=Invitations, device_id=st_user_device_name, password=st.text(min_size=1))
+        @rule(target=Users,
+              invitation=Invitations,
+              device_id=st_user_device_name,
+              password=st.text(min_size=1))
         @skip_on_broken_stream
         def claim(self, invitation, device_id, password):
             if not invitation:
                 return
+            user_device = invitation[0] + '@' + device_id
             rep = self.core_cmd({
                 'cmd': 'user_claim',
-                'id': invitation[0] + '@' + device_id,
+                'id': user_device,
                 'invitation_token': invitation[1],
                 'password': password
             })
             note(rep)
-            expected_result = self.user_oracle.claim(invitation[0], device_id, invitation[1], password)
+            expected_result = self.user_oracle.claim(
+                invitation[0],
+                device_id,
+                invitation[1],
+                password
+            )
             assert rep['status'] == expected_result
             if rep['status'] == 'ok':
-                return (invitation[0] + '@' + device_id, password)
+                return (user_device, password)
 
     await CoreOnline.run_test()

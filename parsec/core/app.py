@@ -18,7 +18,8 @@ from parsec.schema import BaseCmdSchema, fields, validate
 
 
 logger = logbook.Logger("parsec.core.app")
-user_device_name_regexp = r'\A[a-zA-Z][a-zA-Z0-9\-_]*\Z'
+device_id_regexp = r'\A[a-zA-Z][a-zA-Z0-9\-_]*@[a-zA-Z][a-zA-Z0-9\-_]*\Z'
+user_or_device_regexp = r'\A[a-zA-Z][a-zA-Z0-9\-_]*\Z'
 
 
 class cmd_LOGIN_Schema(BaseCmdSchema):
@@ -27,7 +28,7 @@ class cmd_LOGIN_Schema(BaseCmdSchema):
 
 
 class cmd_USER_INVITE_Schema(BaseCmdSchema):
-    user_id = fields.String(required=True, validate=validate.Regexp(user_device_name_regexp))
+    user_id = fields.String(required=True, validate=validate.Regexp(user_or_device_regexp))
 
 
 # TODO: change id to user_id/device_name
@@ -48,7 +49,7 @@ class cmd_EVENT_SUBSCRIBE_Schema(BaseCmdSchema):
 
 class cmd_DEVICE_CONFIGURE_Schema(BaseCmdSchema):
     # TODO: add regex validation
-    device_id = fields.String(required=True, validate=validate.Regexp(user_device_name_regexp))
+    device_id = fields.String(required=True, validate=validate.Regexp(device_id_regexp))
     password = fields.String(required=True)
     configure_device_token = fields.String(required=True)
 

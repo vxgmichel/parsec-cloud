@@ -3,7 +3,7 @@ import pytest
 from hypothesis import strategies as st, note
 from hypothesis.stateful import Bundle, rule
 
-from parsec.core.app import user_device_name_regexp
+from parsec.core.app import user_or_device_regexp, device_id_regexp
 
 from tests.common import (
     connect_core, core_factory, backend_factory, run_app
@@ -11,7 +11,8 @@ from tests.common import (
 from tests.hypothesis.conftest import skip_on_broken_stream
 
 
-validator = validate.Regexp(user_device_name_regexp)
+user_or_device_validator = validate.Regexp(user_or_device_regexp)
+device_id_validator = validate.Regexp(device_id_regexp)
 
 
 class UserOracle:
@@ -21,6 +22,7 @@ class UserOracle:
         self.users = {}
         self.devices_config = []
         self.invitations = {}
+        self.declarations = {}
         self.tokens = {}
 
     def login(self, user, password):
@@ -52,7 +54,7 @@ class UserOracle:
             if user in self.users:
                 return 'already_exists'
             try:
-                validator(user)
+                user_or_device_validator(user)
             except ValidationError:
                 return 'bad_message'
             self.invitations[user] = 'missing_token'
@@ -72,25 +74,73 @@ class UserOracle:
         if self.connected:
             return 'already_logged'
         try:
-            validator(user)
-            validator(device)
+            user_or_device_validator(user)
+            user_or_device_validator(device)
         except ValidationError:
             return 'bad_message'
-        user_device = user + '@' + device
+        device_id = user + '@' + device
         if user in self.users:
             return 'already_exists_error'
-        elif user_device in self.devices_config:
+        elif device_id in self.devices_config:
             return 'device_config_saving_error'
         elif user in self.invitations and token == self.invitations[user]:
             del self.invitations[user]
             del self.tokens[token]
             self.users[user] = password
-            self.devices_config.append(user_device)
+            self.devices_config.append(device_id)
             return 'ok'
         elif user in self.invitations and token != self.invitations[user]:
             return 'claim_error'
         else:
             return 'not_found_error'
+
+    def declare(self, device):
+        if self.connected:
+            device_id = self.connected.rsplit('@', 1)[0] + '@' + device
+            if (device_id in self.devices_config or
+                    device_id in self.declarations):
+                return 'already_exists'
+            try:
+                user_or_device_validator(device)
+            except ValidationError:
+                return 'bad_message'
+            self.declarations[device_id] = 'missing_token'
+            return 'ok'
+        else:
+            return 'login_required'
+
+    def set_configuration_token(self, device, token):
+        if self.declarations[device] == 'missing_token':
+            self.declarations[device] = token
+        if token in self.tokens:
+            raise Exception('Token conflict')
+        else:
+            self.tokens[token] = device
+
+    def configure(self, device_id, token, password):
+        if self.connected:
+            return 'already_logged'
+        try:
+            device_id_validator(device_id)
+        except ValidationError:
+            return 'bad_message'
+        if device_id in self.devices_config:
+            return 'device_config_saving_error'
+        elif device_id in self.declarations and token == self.declarations[device_id]:
+            del self.declarations[device_id]
+            del self.tokens[token]
+            self.devices_config.append(device_id)
+            return 'ok'
+        elif device_id in self.declarations and token != self.declarations[device_id]:
+            return 'configure_error'
+        else:
+            return 'not_found_error'
+
+    def get_configurationt_try(self):
+        pass
+
+    def accept_configuration_try(self, try_id):
+        pass
 
 
 @pytest.mark.slow
@@ -104,11 +154,13 @@ async def test_online(
     alice
 ):
 
-    st_user_device_name = st.from_regex(user_device_name_regexp)
+    st_user_or_device = st.from_regex(user_or_device_regexp)
 
     class CoreOnline(TrioDriverRuleBasedStateMachine):
         Invitations = Bundle('invitation')
         Users = Bundle('user')
+        Declarations = Bundle('declaration')
+        Devices = Bundle('device')
 
         count = 0
 
@@ -141,6 +193,11 @@ async def test_online(
                             await core.login(alice)
                             async with connect_core(core) as sock:
 
+                                await sock.send({
+                                    'cmd': 'event_subscribe',
+                                    'event': 'device_try_claim_submitted'})
+                                rep = await sock.recv()
+                                assert rep == {'status': 'ok'}
                                 self.user_oracle = UserOracle()
 
                                 task_status.started()
@@ -148,6 +205,21 @@ async def test_online(
                                 while True:
                                     msg = await self.communicator.trio_recv()
                                     await sock.send(msg)
+
+                                    if msg['cmd'] == 'device_configure':
+                                        await sock.send({'cmd': 'event_listen', 'wait': False})
+                                        # import pdb; pdb.set_trace()
+                                        rep = await sock.recv()
+                                        # import pdb; pdb.set_trace()
+                                        device_name = msg['device_id'].rsplit('@', 1)[1]
+                                        assert rep['event'] == 'device_try_claim_submitted'
+                                        assert rep['device_name'] == device_name
+                                        await sock.send({
+                                            'cmd': 'device_accept_configuration_try',
+                                            'configuration_try_id': rep['configuration_try_id']})
+                                        rep = await sock.recv()
+                                        assert rep == {'status': 'ok'}
+
                                     rep = await sock.recv()
                                     await self.communicator.trio_respond(rep)
 
@@ -200,7 +272,7 @@ async def test_online(
             expected_result = self.user_oracle.info()
             assert rep == {'status': 'ok', 'id': expected_result[0], 'loaded': expected_result[1]}
 
-        @rule(target=Invitations, user_id=st_user_device_name)
+        @rule(target=Invitations, user_id=st_user_or_device)
         @skip_on_broken_stream
         def invite(self, user_id):
             rep = self.core_cmd({
@@ -216,16 +288,15 @@ async def test_online(
 
         @rule(target=Users,
               invitation=Invitations,
-              device_id=st_user_device_name,
+              device_id=st_user_or_device,
               password=st.text(min_size=1))
         @skip_on_broken_stream
         def claim(self, invitation, device_id, password):
             if not invitation:
                 return
-            user_device = invitation[0] + '@' + device_id
             rep = self.core_cmd({
                 'cmd': 'user_claim',
-                'id': user_device,
+                'id': invitation[0] + '@' + device_id,
                 'invitation_token': invitation[1],
                 'password': password
             })
@@ -238,6 +309,51 @@ async def test_online(
             )
             assert rep['status'] == expected_result
             if rep['status'] == 'ok':
-                return (user_device, password)
+                return (device_id, password)
+
+        @rule(target=Declarations, device_name=st_user_or_device)
+        @skip_on_broken_stream
+        def declare(self, device_name):
+            rep = self.core_cmd({
+                'cmd': 'device_declare',
+                'device_name': device_name
+            })
+            note(rep)
+            expected_status = self.user_oracle.declare(device_name)
+            assert rep['status'] == expected_status
+            if self.user_oracle.connected:
+                device_id = self.user_oracle.connected.rsplit('@', 1)[0] + '@' + device_name
+                if rep['status'] == 'ok':
+                    self.user_oracle.set_configuration_token(device_id, rep['configure_device_token'])
+                    return (device_id, rep['configure_device_token'])
+
+        # @rule(target=Devices,
+        #       declaration=Declarations,
+        #       password=st.text(min_size=1))
+        # @skip_on_broken_stream
+        # def configure(self, declaration, password):
+        #     if not declaration:
+        #         return
+        #     rep = self.core_cmd({
+        #         'cmd': 'device_configure',
+        #         'device_id': declaration[0],
+        #         'configure_device_token': declaration[1],
+        #         'password': password
+        #     })
+        #     note(rep)
+        #     expected_result = self.user_oracle.configure(
+        #         declaration[0],
+        #         declaration[1],
+        #         password
+        #     )
+        #     assert rep['status'] == expected_result
+        #     if rep['status'] == 'ok':
+        #         return (declaration[0], password)
 
     await CoreOnline.run_test()
+
+# socketConfigureDevice => `{"cmd": "device_configure", "device_id": "${identity}", "password": "${password}", "configure_device_token": "${token}"}`
+# socketEventSubscribe => `{"cmd": "event_subscribe", "event": "device_try_claim_submitted"}`
+# socketEventListen => `{"cmd": "event_listen", "wait": "False"}`
+# socketAcceptDevice => `{"cmd": "device_accept_configuration_try", "configuration_try_id": "${configuration_try_id}"}`
+# socketEventUnsubscribe => `{"cmd": "event_unsubscribe", "event": "device_try_claim_submitted"}`

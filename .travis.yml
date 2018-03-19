@@ -7,14 +7,12 @@ services:
 env:
   - PARSEC_POSTGRESQL_TEST_URL='postgresql://postgres@localhost/parsec_test'
 install:
-  - pip install -U pipenv
+  - pip install -U pipenv coveralls
   - pipenv install --dev
-  - pipenv shell
-  - pip install coveralls
 before_script:
   - psql -c 'create database parsec_test;' -U postgres
 script:
-  - py.test tests --runslow -v -s --no-postgresql
+  - pipenv run py.test tests --runslow -v -s --no-postgresql
 after_success:
   - coveralls
 deploy:

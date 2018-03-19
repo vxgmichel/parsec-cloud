@@ -168,10 +168,6 @@
             ],
             "version": "==1.0.5"
         },
-        "parsec-cloud": {
-            "editable": true,
-            "git": "git@github.com:Scille/parsec-cloud.git@48c6cc1d05ba6a85d71ec4ca509da1d808b55bcc"
-        },
         "pendulum": {
             "hashes": [
                 "sha256:80955d968c441d2d381d2b073dd445a6b027f791b36268442cdb624f85667b1c",

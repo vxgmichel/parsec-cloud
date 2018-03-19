@@ -68,6 +68,7 @@ test_requirements = [
     'flake8',
     'hypothesis',
     'bumpversion',
+    'setuptools>=39.0.0'
 ]
 
 extra_requirements = {

@@ -339,20 +339,14 @@ async def test_flush(foo, bar_txt, mocked_manifests_manager):
 
 @pytest.mark.trio
 async def test_simple_sync(fs, mocked_manifests_manager):
-    def fetch_effect(id, rts, key, version=None):
-        if version is None:
-            return {
-                'format': 1,
-                'type': 'folder_manifest',
-                'version': 2,
-                'created': datetime(2017, 1, 1),
-                'updated': datetime(2017, 12, 31, 23, 59, 59),
-                'children': {}
-            }
-
-        return {}
-
-    mocked_manifests_manager.fetch_from_backend.side_effect = fetch_effect
+    mocked_manifests_manager.fetch_from_backend.return_value = {
+        'format': 1,
+        'type': 'folder_manifest',
+        'version': 2,
+        'created': datetime(2017, 1, 1),
+        'updated': datetime(2017, 12, 31, 23, 59, 59),
+        'children': {}
+    }
     foo = create_entry(fs, 'foo', need_sync=True)
     with freeze_time('2017-07-07'):
         await foo.sync()

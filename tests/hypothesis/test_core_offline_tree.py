@@ -71,6 +71,7 @@ class OracleFS:
 
 @pytest.mark.slow
 @pytest.mark.trio
+@pytest.mark.hypothesis
 async def test_offline_core_tree(
     TrioDriverRuleBasedStateMachine,
     mocked_local_storage_connection,

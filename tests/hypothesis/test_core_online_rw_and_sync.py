@@ -23,6 +23,7 @@ class FileOracle:
 
 @pytest.mark.slow
 @pytest.mark.trio
+@pytest.mark.hypothesis
 async def test_online(
     TrioDriverRuleBasedStateMachine,
     mocked_local_storage_connection,

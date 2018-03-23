@@ -17,10 +17,15 @@ def pytest_addoption(parser):
                      help="Don't run tests making use of PostgreSQL")
     parser.addoption("--runslow", action="store_true",
                      help="Don't skip slow tests")
+    parser.addoption("--runhs", action="store_true", help="Run only hypothesis")
 
 
 def pytest_runtest_setup(item):
-    if 'slow' in item.keywords and not item.config.getoption('--runslow'):
+    if item.config.getoption('--runhs'):
+        if 'hypothesis2' not in item.keywords:
+            pytest.skip('skipped due to --runhs')
+
+    elif 'slow' in item.keywords and not item.config.getoption('--runslow'):
         pytest.skip('need --runslow option to run')
 
 

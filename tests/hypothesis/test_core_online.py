@@ -10,6 +10,7 @@ from tests.hypothesis.conftest import skip_on_broken_stream
 
 @pytest.mark.slow
 @pytest.mark.trio
+@pytest.mark.hypothesis
 async def test_online(
     TrioDriverRuleBasedStateMachine,
     mocked_local_storage_connection,

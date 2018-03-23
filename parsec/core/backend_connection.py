@@ -6,9 +6,6 @@ from parsec.utils import CookedSocket
 from parsec.handshake import ClientHandshake, AnonymousClientHandshake
 
 
-logger = logbook.Logger("parsec.core.backend_connection")
-
-
 class BackendError(Exception):
     pass
 
@@ -18,7 +15,10 @@ class BackendNotAvailable(BackendError):
 
 
 class BackendConnection:
-    def __init__(self, device, addr, signal_ns):
+    def __init__(self, device, addr, signal_ns, logname='parsec.core'):
+        self.logname = logname
+        self.logger = logbook.Logger('%s.backend_connection' % logname)
+
         self.handshake_id = device.id
         self.handshake_signkey = device.device_signkey
         self.addr = urlparse(addr)
@@ -30,10 +30,10 @@ class BackendConnection:
         self._subscribed_events = []
 
     async def _socket_connection_factory(self):
-        logger.debug('connecting to backend {}:{}', self.addr.hostname, self.addr.port)
+        self.logger.debug('connecting to backend {}:{}', self.addr.hostname, self.addr.port)
         sockstream = await trio.open_tcp_stream(self.addr.hostname, self.addr.port)
         try:
-            logger.debug('handshake has {}', self.handshake_id)
+            self.logger.debug('handshake has {}', self.handshake_id)
             sock = CookedSocket(sockstream)
             if self.handshake_id == 'anonymous':
                 ch = AnonymousClientHandshake()
@@ -45,7 +45,7 @@ class BackendConnection:
             result_req = await sock.recv()
             ch.process_result_req(result_req)
         except Exception as exc:
-            logger.debug('handshake failed {!r}', exc)
+            self.logger.debug('handshake failed {!r}', exc)
             await sockstream.aclose()
             raise exc
         return sock
@@ -65,21 +65,21 @@ class BackendConnection:
         async with self._lock:
             # Try to use the already connected socket
             try:
-                logger.debug('send {}', req)
+                self.logger.debug('send {}', req)
                 rep = await self._naive_send(req)
-                logger.debug('recv {}', rep)
+                self.logger.debug('recv {}', rep)
                 return rep
             except (BackendNotAvailable, trio.BrokenStreamError, trio.ClosedStreamError) as exc:
-                logger.debug('retrying, cannot reach backend: {!r}', exc)
+                self.logger.debug('retrying, cannot reach backend: {!r}', exc)
                 try:
                     # If it failed, reopen the socket and retry the request
                     await self._init_send_connection()
-                    logger.debug('send {}', req)
+                    self.logger.debug('send {}', req)
                     rep = await self._naive_send(req)
-                    logger.debug('recv {}', rep)
+                    self.logger.debug('recv {}', rep)
                     return rep
                 except (OSError, trio.BrokenStreamError) as e:
-                    logger.debug('aborting, cannot reach backend: {!r}', e)
+                    self.logger.debug('aborting, cannot reach backend: {!r}', e)
                     # Failed again, it seems we are offline
                     raise BackendNotAvailable() from e
 
@@ -147,7 +147,9 @@ class BackendConnection:
 
 
 class AnonymousBackendConnection(BackendConnection):
-    def __init__(self, addr):
+    def __init__(self, addr, logname='parsec.core'):
+        self.logname = logname
+        self.logger = logbook.Logger('%s.backend_connection' % logname)
         self.handshake_id = 'anonymous'
         self.handshake_signkey = None
         self.addr = urlparse(addr)

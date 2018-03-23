@@ -21,9 +21,6 @@ from parsec.utils import CookedSocket, ParsecError, to_jsonb64, from_jsonb64
 from parsec.schema import BaseCmdSchema, fields
 
 
-logger = logbook.Logger("parsec.core.app")
-
-
 class cmd_LOGIN_Schema(BaseCmdSchema):
     id = fields.String(required=True)
     password = fields.String(missing=None)
@@ -66,7 +63,10 @@ class cmd_FUSE_START_Schema(BaseCmdSchema):
 
 class CoreApp:
 
-    def __init__(self, config):
+    def __init__(self, config, logname="parsec.core"):
+        self.logname = logname
+        self.logger = logbook.Logger('%s.app' % logname)
+
         self.signal_ns = blinker.Namespace()
         self.config = config
         self.backend_addr = config.backend_addr
@@ -132,6 +132,7 @@ class CoreApp:
             await self.logout()
 
     async def handle_client(self, sockstream):
+        logger = logbook.Logger('%s.client.%s' % (self.logname, id(sockstream)))
         try:
             sock = CookedSocket(sockstream)
             while True:
@@ -169,7 +170,8 @@ class CoreApp:
         self.auth_subscribed_events = {}
         self.auth_events = trio.Queue(100)
         self.backend_connection = BackendConnection(
-            device, self.config.backend_addr, self.signal_ns
+            device, self.config.backend_addr, self.signal_ns,
+            logname=self.logname
         )
         await self.backend_connection.init(self.nursery)
         try:
@@ -375,7 +377,7 @@ class CoreApp:
             try:
                 self.auth_events.put_nowait((event, sender))
             except trio.WouldBlock:
-                logger.warning('event queue is full')
+                self.logger.warning('event queue is full')
 
         self.auth_subscribed_events[event, subject] = _handle_event
         if event == 'device_try_claim_submitted':

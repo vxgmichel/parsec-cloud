@@ -129,9 +129,9 @@ async def connect_core(core):
 
 
 @acontextmanager
-async def core_factory(**config):
+async def core_factory(logname='parsec.core', **config):
     config = CoreConfig(**config)
-    core = CoreApp(config)
+    core = CoreApp(config, logname=logname)
     async with trio.open_nursery() as nursery:
         await core.init(nursery)
         try:

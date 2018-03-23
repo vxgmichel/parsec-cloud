@@ -29,7 +29,7 @@ class BackendStorage:
             return from_jsonb64(rep['blob'])
         else:
             raise BackendAccessError(
-                'Error %s: %s' % (rep['status'], rep['reason']))
+                'Error %s: %s' % (rep['status'], rep.get('reason', rep.get('errors'))))
 
     async def sync_user_manifest(self, version, blob):
         rep = await self.backend_conn.send({
@@ -39,7 +39,7 @@ class BackendStorage:
         })
         if rep['status'] != 'ok':
             raise BackendConcurrencyError(
-                'Error %s: %s' % (rep['status'], rep['reason']))
+                'Error %s: %s' % (rep['status'], rep.get('reason', rep.get('errors'))))
 
     async def fetch_manifest(self, id, rts, version=None):
         payload = {
@@ -54,7 +54,7 @@ class BackendStorage:
             return from_jsonb64(rep['blob'])
         else:
             raise BackendAccessError(
-                'Error %s: %s' % (rep['status'], rep['reason']))
+                'Error %s: %s' % (rep['status'], rep.get('reason', rep.get('errors'))))
 
     async def sync_manifest(self, id, wts, version, blob):
         rep = await self.backend_conn.send({
@@ -66,7 +66,7 @@ class BackendStorage:
         })
         if rep['status'] != 'ok':
             raise BackendConcurrencyError(
-                'Error %s: %s' % (rep['status'], rep['reason']))
+                'Error %s: %s' % (rep['status'], rep.get('reason', rep.get('errors'))))
 
     async def sync_new_manifest(self, blob):
         rep = await self.backend_conn.send({
@@ -75,7 +75,7 @@ class BackendStorage:
         })
         if rep['status'] != 'ok':
             raise BackendAccessError(
-                'Error %s: %s' % (rep['status'], rep['reason']))
+                'Error %s: %s' % (rep['status'], rep.get('reason', rep.get('errors'))))
         return rep['id'], rep['read_trust_seed'], rep['write_trust_seed']
 
     async def sync_new_block(self, block):
@@ -85,7 +85,7 @@ class BackendStorage:
         })
         if rep['status'] != 'ok':
             raise BackendAccessError(
-                'Error %s: %s' % (rep['status'], rep['reason']))
+                'Error %s: %s' % (rep['status'], rep.get('reason', rep.get('errors'))))
         return rep['id']
 
     async def fetch_block(self, id):
@@ -97,4 +97,4 @@ class BackendStorage:
             return from_jsonb64(rep['block'])
         else:
             raise BackendAccessError(
-                'Error %s: %s' % (rep['status'], rep['reason']))
+                'Error %s: %s' % (rep['status'], rep.get('reason', rep.get('errors'))))

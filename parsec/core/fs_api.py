@@ -1,4 +1,4 @@
-from parsec.core.fs import BaseFolderEntry, BaseFileEntry
+from parsec.core.fs import BaseFolderEntry, BaseRootEntry, BaseFileEntry
 from parsec.utils import to_jsonb64
 from parsec.schema import BaseCmdSchema, fields, validate
 
@@ -242,5 +242,8 @@ class FSApi:
         # the target, there will be synchronized as empty files/folders.
         # It would be better (and faster) to skip them entirely.
         for to_sync_parent in to_sync_parents:
-            await to_sync_parent.sync()
+            if isinstance(to_sync_parent, BaseRootEntry):
+                await to_sync_parent.sync(child=req['path'].split('/')[1])
+            elif isinstance(to_sync_parent, BaseFolderEntry):
+                await to_sync_parent.minimal_sync_if_placeholder()
         return {'status': 'ok'}

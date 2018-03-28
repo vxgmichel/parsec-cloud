@@ -342,7 +342,7 @@ class BaseRootEntry(BaseFolderEntry):
         await self._fs.manifests_manager.flush_user_manifest_on_local(manifest)
         self._need_flush = False
 
-    async def sync(self, recursive=False):
+    async def sync(self, recursive=False, child=None):
         async with self.acquire_write():
 
             if not await _recursive_need_sync(self):
@@ -375,12 +375,16 @@ class BaseRootEntry(BaseFolderEntry):
 
         # Convert placeholder children into proper synchronized children
         for name, entry in children.items():
+            if child and name != child:
+                continue
             if recursive:
                 await entry.sync(recursive=True)
             else:
                 await entry.minimal_sync_if_placeholder()
             # TODO: Synchronize with up-to-date data and flush to avoid
             # having to re-synchronize placeholders
+            if isinstance(entry, BaseNotLoadedEntry):
+                entry = await entry.load()
             manifest['children'][name] = entry._access.dump(with_type=False)
 
         # Upload the file manifest as new vlob version

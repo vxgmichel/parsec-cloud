@@ -375,7 +375,10 @@ class BaseRootEntry(BaseFolderEntry):
 
         # Convert placeholder children into proper synchronized children
         for name, entry in children.items():
-            if child and name != child:
+            try:
+                if child and name != child and not entry._access.rts:
+                    continue
+            except AttributeError:
                 continue
             if recursive:
                 await entry.sync(recursive=True)

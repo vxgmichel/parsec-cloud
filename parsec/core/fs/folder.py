@@ -180,6 +180,8 @@ class BaseFolderEntry(BaseEntry):
                 await entry.minimal_sync_if_placeholder()
             # TODO: Synchronize with up-to-date data and flush to avoid
             # having to re-synchronize placeholders
+            if isinstance(entry, BaseNotLoadedEntry):
+                entry = await entry.load()
             manifest['children'][name] = entry._access.dump(with_type=False)
 
         # Upload the file manifest as new vlob version

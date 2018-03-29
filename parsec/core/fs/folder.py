@@ -135,7 +135,7 @@ class BaseFolderEntry(BaseEntry):
             self._base_version = 1
             self._access = self._fs._vlob_access_cls(id, rts, wts, key)
 
-    async def sync(self, recursive=False):
+    async def sync(self, recursive=False, child=None):
         # TODO: if file is a placeholder but contains data we sync it two
         # times...
         await self.minimal_sync_if_placeholder()
@@ -172,6 +172,11 @@ class BaseFolderEntry(BaseEntry):
             children = self._children.copy()
             access = self._access
 
+        if child:
+            old_manifest = await self._fs.manifests_manager.fetch_from_backend(
+                self._access.id, self._access.rts, self._access.key)
+            manifest['children'] = old_manifest['children'] if old_manifest else {}
+            children = {child: children[child]}
         # Convert placeholder children into proper synchronized children
         for name, entry in children.items():
             if recursive:
@@ -373,13 +378,12 @@ class BaseRootEntry(BaseFolderEntry):
             }
             children = self._children.copy()
 
+        if child:
+            old_manifest = await self._fs.manifests_manager.fetch_user_manifest_from_backend()
+            manifest['children'] = old_manifest['children'] if old_manifest else {}
+            children = {child: children[child]}
         # Convert placeholder children into proper synchronized children
         for name, entry in children.items():
-            try:
-                if child and name != child and not entry._access.rts:
-                    continue
-            except AttributeError:
-                continue
             if recursive:
                 await entry.sync(recursive=True)
             else:

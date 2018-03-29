@@ -245,5 +245,5 @@ class FSApi:
             if isinstance(to_sync_parent, BaseRootEntry):
                 await to_sync_parent.sync(child=req['path'].split('/')[1])
             elif isinstance(to_sync_parent, BaseFolderEntry):
-                await to_sync_parent.minimal_sync_if_placeholder()
+                await to_sync_parent.sync()
         return {'status': 'ok'}

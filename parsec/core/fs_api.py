@@ -241,9 +241,9 @@ class FSApi:
         # TODO: If parent contains placeholders than what compose the path to
         # the target, there will be synchronized as empty files/folders.
         # It would be better (and faster) to skip them entirely.
-        for to_sync_parent in to_sync_parents:
+        for index, to_sync_parent in enumerate(to_sync_parents):
             if isinstance(to_sync_parent, BaseRootEntry):
-                await to_sync_parent.sync(child=req['path'].split('/')[1])
+                await to_sync_parent.sync(child=req['path'].split('/')[index + 1])
             elif isinstance(to_sync_parent, BaseFolderEntry):
-                await to_sync_parent.sync()
+                await to_sync_parent.sync(child=req['path'].split('/')[index + 1])
         return {'status': 'ok'}

@@ -81,7 +81,7 @@ dist: clean
 	ls -l dist
 
 install: clean
-	python setup.py install
+	python setup.py install --process-dependency-links
 
 gen_protobufs:
 	tools/protoc/bin/protoc -I=. --python_out=. parsec/vfs/vfs.proto

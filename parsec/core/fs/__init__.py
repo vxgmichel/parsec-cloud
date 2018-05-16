@@ -98,6 +98,11 @@ class FS:
             entry = await entry.fetch_child(hop)
         return entry
 
+    async def update_last_processed_message(self, offset):
+        async with self.root.acquire_write():
+            self.root._last_processed_message = offset
+            self.root._modified()
+
     def _load_entry(self, access, user_id, device_name, name, parent, manifest):
         if manifest["type"] == "file_manifest":
             blocks_accesses = [self._block_access_cls(**v) for v in manifest["blocks"]]

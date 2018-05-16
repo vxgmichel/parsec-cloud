@@ -149,12 +149,6 @@ class Core(BaseAsyncComponent):
                 # easier post-mortem debugging
                 raise
 
-            try:
-                await self.fs.root.sync()
-                await self.sharing._process_all_last_messages()
-            except BackendNotAvailable:
-                pass
-
     async def logout(self):
         async with self.auth_lock:
             await self._logout_no_lock()

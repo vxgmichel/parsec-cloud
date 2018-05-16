@@ -8,11 +8,10 @@ import tempfile
 import logbook
 from urllib.parse import urlparse
 
-from parsec.core import Core, CoreConfig, Device, config
+from parsec.core import Core, CoreConfig, Device
 
 
 logger = logbook.Logger("parsec.core.app")
-logger.handlers.append(logbook.FileHandler(config.get_log_path(), level="WARNING"))
 
 
 JOHN_DOE_DEVICE_ID = "johndoe@test"
@@ -76,6 +75,7 @@ def run_with_pdb(cmd, *args, **kwargs):
 @click.option(
     "--log-level", "-l", default="WARNING", type=click.Choice(("DEBUG", "INFO", "WARNING", "ERROR"))
 )
+@click.option("--log-file", "-o")
 @click.option("--pdb", is_flag=True)
 # @click.option('--identity', '-i', default=None)
 # @click.option('--identity-key', '-I', type=click.File('rb'), default=None)
@@ -83,8 +83,6 @@ def run_with_pdb(cmd, *args, **kwargs):
 
 @click.option("--I-am-John", is_flag=True, help="Log as dummy John Doe user")
 # @click.option('--cache-size', help='Max number of elements in cache', default=1000)
-
-
 def core_cmd(**kwargs):
     if kwargs.pop("pdb"):
         return run_with_pdb(_core, **kwargs)
@@ -93,10 +91,14 @@ def core_cmd(**kwargs):
         return _core(**kwargs)
 
 
-def _core(socket, backend_addr, backend_watchdog, debug, log_level, i_am_john):
-    log_handler = logbook.StderrHandler(level=log_level.upper())
-    # Push globally the log handler make it work across threads
-    log_handler.push_application()
+def _core(socket, backend_addr, backend_watchdog, debug, log_level, log_file, i_am_john):
+    if log_file:
+        file_handler = logbook.FileHandler(log_file, level=log_level.upper())
+        # Push globally the log handler make it work across threads
+        file_handler.push_application()
+    else:
+        log_handler = logbook.StderrHandler(level=log_level.upper())
+        log_handler.push_application()
 
     async def _login_and_run(user=None):
         async with trio.open_nursery() as nursery:

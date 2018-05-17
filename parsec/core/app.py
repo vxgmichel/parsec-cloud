@@ -122,6 +122,7 @@ class Core(BaseAsyncComponent):
                 self.fs,
                 self.backend_connection,
                 self.backend_events_manager,
+                self.encryption_manager,
                 self.signal_ns,
             )
 

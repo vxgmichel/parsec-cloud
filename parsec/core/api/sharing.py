@@ -1,8 +1,8 @@
 from parsec.schema import BaseCmdSchema, fields
 from parsec.core.app import Core, ClientContext
+from parsec.core.encryption_manager import BackendUserNotFound
 from parsec.core.sharing import SharingError
 from parsec.core.backend_connection import BackendNotAvailable
-from parsec.backend.exceptions import NotFoundError
 
 
 class cmd_SHARE_Schema(BaseCmdSchema):
@@ -18,8 +18,8 @@ async def share(req: dict, client_ctx: ClientContext, core: Core) -> dict:
     cmd_SHARE_Schema().load_or_abort(req)
     try:
         await core.sharing.share(req["path"], req["recipient"])
-    except NotFoundError as exc:
-        return {"status": "not_found", "reason": str(exc)}
+    except BackendUserNotFound as exc:
+        return {"status": "backend_user_not_found", "reason": str(exc)}
     except BackendNotAvailable as exc:
         return {"status": "backend_not_available", "reason": "Backend not available"}
     except SharingError as exc:

@@ -6,7 +6,7 @@ from nacl.signing import VerifyKey
 
 from parsec.schema import UnknownCheckedSchema, fields
 from parsec.core.base import BaseAsyncComponent
-from parsec.utils import from_jsonb64, ejson_loads, ParsecError
+from parsec.utils import from_jsonb64, to_jsonb64, ejson_loads, ejson_dumps, ParsecError
 from parsec.core.fs import FSInvalidPath
 from parsec.core.backend_connection import BackendNotAvailable, BackendError
 
@@ -56,12 +56,15 @@ class BackendMessageError(Exception):
 
 class Sharing(BaseAsyncComponent):
 
-    def __init__(self, device, fs, backend_connection, backend_event_manager, signal_ns):
+    def __init__(
+        self, device, fs, backend_connection, backend_event_manager, encryption_manager, signal_ns
+    ):
         super().__init__()
         self._signal_ns = signal_ns
         self.fs = fs
         self._backend_connection = backend_connection
         self._backend_event_manager = backend_event_manager
+        self._encryption_manager = encryption_manager
         self.device = device
         self.msg_arrived = trio.Event()
         self._message_listener_task_cancel_scope = None
@@ -72,6 +75,15 @@ class Sharing(BaseAsyncComponent):
             "message_arrived", self.device.user_id
         )
         self._signal_ns.signal("message_arrived").connect(self._msg_arrived_cb, weak=True)
+        try:
+            user_manifest = await self.fs.manifests_manager.fetch_user_manifest_from_backend()
+        except BackendNotAvailable:
+            pass
+        else:
+            if user_manifest:
+                await self._process_all_last_messages(user_manifest["last_processed_message"])
+            else:
+                await self._process_all_last_messages(0)
 
     async def _teardown(self):
         if self._message_listener_task_cancel_scope:
@@ -83,7 +95,7 @@ class Sharing(BaseAsyncComponent):
         rep, errors = backend_user_get_rep_schema.load(rep)
         if errors:
             raise BackendMessageError(
-                "Cannot retreive message %r sender's device informations: %r" % (msg, rep)
+                "Cannot retrieve message %r sender's device informations: %r" % (msg, rep)
             )
 
         try:
@@ -130,16 +142,18 @@ class Sharing(BaseAsyncComponent):
         elif sharing_msg["type"] == "ping":
             self._signal_ns.signal("ping").send(sharing_msg["ping"])
 
-        self.fs.root._last_processed_message = msg["count"]
+        await self.fs.update_last_processed_message(msg["count"])
 
-    async def _process_all_last_messages(self):
-        rep = await self._backend_connection.send(
-            {"cmd": "message_get", "offset": self.fs.root._last_processed_message}
-        )
+    async def _process_all_last_messages(self, offset=None):
+        if not offset:
+            offset = self.fs.root._last_processed_message
+        rep = await self._backend_connection.send({"cmd": "message_get", "offset": offset})
 
         rep, errors = backend_message_get_rep_schema.load(rep)
         if errors:
-            raise BackendMessageError("Cannot retreive user messages: %r" % rep)
+            raise BackendMessageError(
+                "Cannot retreive user messages: %r (errors: %r)" % (rep, errors)
+            )
 
         for msg in rep["messages"]:
             try:
@@ -159,6 +173,33 @@ class Sharing(BaseAsyncComponent):
                     pass
                 except BackendError:
                     logger.exception("Error with backend: " % traceback.format_exc())
+
+    async def share(self, path, recipient):
+        entry = await self.fs.fetch_path(path)
+        # Cannot share a placeholder !
+        if entry.is_placeholder:
+            await entry.sync()
+        sharing_msg = {
+            "type": "share",
+            "author": self.device.id,
+            "content": entry._access.dump(with_type=False),
+            "name": entry.name,
+        }
+        user = await self._encryption_manager.fetch_remote_user(recipient)
+        box = SealedBox(user.user_pubkey)
+        sharing_msg_clear = ejson_dumps(sharing_msg).encode("utf8")
+        sharing_msg_signed = self.device.device_signkey.sign(sharing_msg_clear)
+        sharing_msg_encrypted = box.encrypt(sharing_msg_signed)
+
+        rep = await self._backend_connection.send(
+            {
+                "cmd": "message_new",
+                "recipient": recipient,
+                "body": to_jsonb64(sharing_msg_encrypted),
+            }
+        )
+        if rep["status"] != "ok":
+            raise SharingError("Cannot send sharing message to backend: %r" % rep)
 
     def _msg_arrived_cb(self, sender):
         self.msg_arrived.set()

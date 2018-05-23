@@ -1,3 +1,4 @@
+import ctypes
 import os
 import socket
 import click
@@ -12,7 +13,7 @@ try:
 except ImportError:
     from errno import EBADF as EBADFD
 from stat import S_IRWXU, S_IRWXG, S_IRWXO, S_IFDIR, S_IFREG
-from fuse import FUSE, FuseOSError, Operations, LoggingMixIn, fuse_get_context, fuse_exit
+from fuse import FUSE, FuseOSError, Operations, LoggingMixIn, fuse_get_context, _libfuse
 
 from parsec.utils import from_jsonb64, to_jsonb64, ejson_dumps, ejson_loads
 
@@ -27,9 +28,14 @@ DEFAULT_CORE_UNIX_SOCKET = "tcp://127.0.0.1:6776"
 _need_closing = False
 
 
+def fuse_exit(fuse_ptr):
+    _libfuse.fuse_exit(fuse_ptr)
+
+
 def shutdown_fuse_if_needed():
     if _need_closing:
-        fuse_exit()
+        fuse_ptr = ctypes.c_void_p(_libfuse.fuse_get_context().contents.fuse)
+        threading.Thread(target=fuse_exit, args=(fuse_ptr,)).start()
         raise FuseOSError(ENOENT)
 
 
@@ -117,13 +123,13 @@ class ContentBuilder:
             current_content = self.contents[current_offset]
             # Insert inside
             if offset >= current_offset and end_offset <= current_offset + len(current_content):
-                new_data = current_content[:offset - current_offset]
+                new_data = current_content[: offset - current_offset]
                 new_data += data
-                new_data += current_content[offset - current_offset + len(data):]
+                new_data += current_content[offset - current_offset + len(data) :]
                 offset = current_offset
             # Insert before and merge
             elif offset <= current_offset and end_offset >= current_offset:
-                new_data = data + current_content[offset + len(data) - current_offset:]
+                new_data = data + current_content[offset + len(data) - current_offset :]
                 offsets_to_delete.append(current_offset)
             # Insert after
             elif offset == current_offset + len(current_content):
@@ -139,7 +145,7 @@ class ContentBuilder:
             if current_offset > length:
                 offsets_to_delete.append(current_offset)
             elif current_offset + len(self.contents[current_offset]) > length:
-                data = self.contents[current_offset][:length - current_offset]
+                data = self.contents[current_offset][: length - current_offset]
                 self.contents[current_offset] = data
         for offset_to_delete in offsets_to_delete:
             del self.contents[offset_to_delete]

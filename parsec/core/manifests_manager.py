@@ -43,13 +43,17 @@ class ManifestsManager(BaseAsyncComponent):
         else:
             # TODO: create a component (or methods in backend_storage ?)
             # dedicated to retrieve user infos
-            rep = await self._backend_connection.send(
-                {"cmd": "user_get", "user_id": unsigned_message["user_id"]}
-            )
-            assert rep["status"] == "ok"
+            verify_key_str = self._local_storage.fetch_device_verify_key(unsigned_message["user_id"], unsigned_message["device_name"])
+            if not verify_key_str:
+                rep = await self._backend_connection.send(
+                    {"cmd": "user_get", "user_id": unsigned_message["user_id"]}
+                )
+                assert rep["status"] == "ok"
+                verify_key_str = rep["devices"][unsigned_message["device_name"]]["verify_key"]
+                self._local_storage.flush_device_verify_key(unsigned_message["user_id"], unsigned_message["device_name"], verify_key_str)
             # TODO: handle crash, handle key validity expiration
             verify_key = VerifyKey(
-                from_jsonb64(rep["devices"][unsigned_message["device_name"]]["verify_key"])
+                from_jsonb64(verify_key_str)
             )
         return verify_key.verify(signed)
 

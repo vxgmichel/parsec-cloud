@@ -32,6 +32,15 @@ class LocalStorage(BaseAsyncComponent):
                 PRIMARY KEY (id)
             )"""
         )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS devices (
+                user_id TEXT NOT NULL,
+                device_name TEXT NOT NULL,
+                verify_key TEXT NOT NULL,
+                PRIMARY KEY (user_id, device_name)
+            )"""
+        )
         self.conn.commit()
 
     async def _teardown(self):
@@ -94,4 +103,16 @@ class LocalStorage(BaseAsyncComponent):
     def flush_dirty_block(self, id, blob):
         cur = self.conn.cursor()
         cur.execute("INSERT OR REPLACE INTO blocks (id, blob) VALUES (?, ?)", (id, blob))
+        self.conn.commit()
+
+    def fetch_device_verify_key(self, user_id, device_name):
+        cur = self.conn.cursor()
+        cur.execute("SELECT verify_key FROM devices WHERE user_id=? AND device_name=?", (user_id, device_name))
+        res = cur.fetchone()
+        if res is not None:
+            return res[0]
+
+    def flush_device_verify_key(self, user_id, device_name, verify_key):
+        cur = self.conn.cursor()
+        cur.execute("INSERT OR REPLACE INTO devices (user_id, device_name, verify_key) VALUES (?, ?, ?)", (user_id, device_name, verify_key))
         self.conn.commit()

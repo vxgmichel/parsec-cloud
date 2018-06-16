@@ -21,10 +21,11 @@ def generate_trust_seed():
 @attr.s
 class VlobAtom:
     id = attr.ib()
-    read_trust_seed = attr.ib(default=attr.Factory(generate_trust_seed))
-    write_trust_seed = attr.ib(default=attr.Factory(generate_trust_seed))
+    read_trust_seed = attr.ib(factory=generate_trust_seed)
+    write_trust_seed = attr.ib(factory=generate_trust_seed)
     blob = attr.ib(default=b"")
     version = attr.ib(default=1)
+    is_sink = attr.ib(default=False)
 
 
 class cmd_CREATE_Schema(BaseCmdSchema):
@@ -43,6 +44,7 @@ class cmd_UPDATE_Schema(BaseCmdSchema):
     version = fields.Integer(validate=lambda n: n > 1)
     trust_seed = fields.String(required=True)
     blob = fields.Base64Bytes(required=True)
+    notify_sinks = fields.List(fields.String())
 
 
 class BaseVlobComponent:

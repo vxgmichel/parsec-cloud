@@ -1,5 +1,5 @@
 from parsec.backend.vlob import VlobAtom, BaseVlobComponent
-from parsec.backend.exceptions import TrustSeedError, VersionError, NotFoundError
+from parsec.backend.exceptions import TrustSeedError, VersionError, NotFoundError, ParsecError
 
 
 class MemoryVlob:
@@ -9,6 +9,7 @@ class MemoryVlob:
         self.read_trust_seed = atom.read_trust_seed
         self.write_trust_seed = atom.write_trust_seed
         self.blob_versions = [atom.blob]
+        self.is_sink = atom.is_sink
 
 
 class MemoryVlobComponent(BaseVlobComponent):
@@ -48,7 +49,7 @@ class MemoryVlobComponent(BaseVlobComponent):
         except IndexError:
             raise VersionError("Wrong blob version.")
 
-    async def update(self, id, trust_seed, version, blob):
+    async def update(self, id, trust_seed, version, blob, notify_sinks=()):
         try:
             vlob = self.vlobs[id]
             if vlob.write_trust_seed != trust_seed:
@@ -63,3 +64,19 @@ class MemoryVlobComponent(BaseVlobComponent):
             raise VersionError("Wrong blob version.")
 
         self._signal_vlob_updated.send(id)
+        for sink_id in notify_sinks:
+            await self._update_sink_vlob(sink_id, id.encode("utf-8"))
+
+    async def _update_sink_vlob(self, sink_id, data):
+        try:
+            vlob = self.vlobs[sink_id]
+            if not vlob.is_sink:
+                raise ParsecError("not_a_sink", "Not a sink vlob")
+            vlob.blob_versions.append(data)
+
+        except KeyError:
+            self.vlobs[sink_id] = MemoryVlob(
+                id=sink_id, read_trust_seed=sink_id, blob=data, is_sink=True
+            )
+
+        self._signal_vlob_updated.send(sink_id)

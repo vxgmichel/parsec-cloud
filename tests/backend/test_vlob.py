@@ -260,3 +260,57 @@ async def test_update_get_event(backend, alice_backend_sock, bob_backend_sock):
     with trio.fail_after(1):
         rep = await bob_backend_sock.recv()
     assert rep == {"status": "ok", "event": "vlob_updated", "status": "ok", "subject": "1"}
+
+
+@pytest.mark.trio
+async def test_update_get_sink_events(backend, alice_backend_sock, bob_backend_sock):
+    await populate_backend_vlob(backend)
+
+    # Register to event
+    await bob_backend_sock.send(
+        {"cmd": "event_subscribe", "event": "vlob_updated", "subject": "42"}
+    )
+    rep = await bob_backend_sock.recv()
+    assert rep == {"status": "ok"}
+    await bob_backend_sock.send(
+        {"cmd": "event_subscribe", "event": "vlob_updated", "subject": "44"}
+    )
+    rep = await bob_backend_sock.recv()
+    assert rep == {"status": "ok"}
+
+    await alice_backend_sock.send(
+        {
+            "cmd": "vlob_update",
+            "id": "1",
+            "trust_seed": "<1 wts>",
+            "version": 3,
+            "blob": to_jsonb64(b""),
+            "notify_sinks": ["42", "43", "44"],
+        }
+    )
+    rep = await alice_backend_sock.recv()
+    assert rep == {"status": "ok"}
+
+    # Time to retrieve the events...
+    async def get_event():
+        await bob_backend_sock.send({"cmd": "event_listen", "wait": False})
+        return await bob_backend_sock.recv()
+
+    e1 = await get_event()
+    assert e1 == {"status": "ok", "event": "vlob_updated", "status": "ok", "subject": "42"}
+    e2 = await get_event()
+    assert e2 == {"status": "ok", "event": "vlob_updated", "status": "ok", "subject": "44"}
+    e3 = await get_event()
+    assert e3 == {"status": "no_events"}  # No more events
+
+    # Fetch the sink data...
+    async def get_sink_vlob(id):
+        await bob_backend_sock.send({"cmd": "vlob_read", "id": id, "trust_seed": id})
+        return await bob_backend_sock.recv()
+
+    rep = await get_sink_vlob("42")
+    assert rep == {"id": "42", "status": "ok", "version": 1, "blob": to_jsonb64(b"1")}
+    rep = await get_sink_vlob("43")
+    assert rep == {"id": "43", "status": "ok", "version": 1, "blob": to_jsonb64(b"1")}
+    rep = await get_sink_vlob("44")
+    assert rep == {"id": "44", "status": "ok", "version": 1, "blob": to_jsonb64(b"1")}

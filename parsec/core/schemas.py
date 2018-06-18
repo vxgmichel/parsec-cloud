@@ -4,6 +4,12 @@ from parsec import schema_fields as fields
 from parsec.schema import UnknownCheckedSchema, OneOfSchema
 
 
+class SharingSchema(UnknownCheckedSchema):
+    owner = fields.String(required=True)
+    guests = fields.List(fields.String(), required=True)
+    notify_sink = fields.String(required=True)
+
+
 # Synchronized with backend data
 
 
@@ -33,6 +39,7 @@ class FileManifestSchema(UnknownCheckedSchema):
     updated = fields.DateTime(required=True)
     size = fields.Integer(required=True, validate=validate.Range(min=0))
     blocks = fields.List(fields.Nested(BlockAccessSchema), required=True)
+    sharing = fields.Nested(SharingSchema)
 
 
 class FolderManifestSchema(UnknownCheckedSchema):
@@ -48,6 +55,7 @@ class FolderManifestSchema(UnknownCheckedSchema):
         fields.Nested(SyncedAccessSchema),
         required=True,
     )
+    sharing = fields.Nested(SharingSchema)
 
 
 class UserManifestSchema(FolderManifestSchema):
@@ -96,6 +104,7 @@ class LocalFileManifestSchema(UnknownCheckedSchema):
     size = fields.Integer(required=True, validate=validate.Range(min=0))
     blocks = fields.List(fields.Nested(BlockAccessSchema), required=True)
     dirty_blocks = fields.List(fields.Nested(DirtyBlockAccessSchema), required=True)
+    sharing = fields.Nested(SharingSchema)
 
 
 class LocalFolderManifestSchema(UnknownCheckedSchema):
@@ -112,6 +121,7 @@ class LocalFolderManifestSchema(UnknownCheckedSchema):
         fields.Nested(LocalAccessSchema),
         required=True,
     )
+    sharing = fields.Nested(SharingSchema)
 
 
 class LocalUserManifestSchema(LocalFolderManifestSchema):

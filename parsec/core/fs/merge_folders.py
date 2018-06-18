@@ -73,6 +73,26 @@ def merge_children(base, diverged, target):
     return resolved, need_sync
 
 
+def merge_sharing(diverged_sharing, target_sharing):
+    if not target_sharing and not diverged_sharing:
+        # Both side have stopped sharing at the same time
+        return None, False
+    elif target_sharing and diverged_sharing:
+        # Sharing entry has been created on both side, easy to merge
+        sharing = {
+            "owner": target_sharing["owner"],
+            "guests": sorted(set(target_sharing["guests"] + diverged_sharing["guests"])),
+            "notify_sink": target_sharing["notify_sink"],
+        }
+        return sharing, sharing != target_sharing
+    else:
+        # Only one side has still sharing informations, keep this one then
+        if target_sharing:
+            return target_sharing.copy(), False
+        else:
+            return diverged_sharing.copy(), True
+
+
 def merge_remote_folder_manifests(base, diverged, target):
     if base is None:
         version = 0
@@ -84,7 +104,11 @@ def merge_remote_folder_manifests(base, diverged, target):
     assert target["version"] >= diverged["version"]
 
     children, need_sync = merge_children(base_children, diverged["children"], target["children"])
+    merged_sharing, sharing_need_sync = merge_sharing(
+        diverged.get("sharing"), target.get("sharing")
+    )
 
+    need_sync |= sharing_need_sync
     if not need_sync:
         updated = target["updated"]
     else:
@@ -93,7 +117,11 @@ def merge_remote_folder_manifests(base, diverged, target):
         else:
             updated = diverged["updated"]
 
-    return {**target, "updated": updated, "children": children}, need_sync
+    merged = {**target, "updated": updated, "children": children}
+    if merged_sharing:
+        merged["sharing"] = merged_sharing
+
+    return merged, need_sync
 
 
 def merge_local_folder_manifests(base, diverged, target):
@@ -118,3 +146,27 @@ def merge_local_folder_manifests(base, diverged, target):
             updated = diverged["updated"]
 
     return {**target, "need_sync": need_sync, "updated": updated, "children": children}
+
+
+def merge_file(diverged, target):
+    assert target["version"] >= diverged["version"]
+
+    # Cannot merge data
+    if diverged["size"] != target["size"] or diverged["blocks"] != target["blocks"]:
+        return None, False
+
+    merged_sharing, need_sync = merge_sharing(diverged.get("sharing"), target.get("sharing"))
+
+    if not need_sync:
+        return target, False
+    else:
+        if target["updated"] > diverged["updated"]:
+            updated = target["updated"]
+        else:
+            updated = diverged["updated"]
+
+        merged = {**diverged, "updated": updated}
+        if merge_sharing:
+            merged["sharing"] = merged_sharing
+
+        return merged, True

@@ -1,6 +1,7 @@
 import trio
 import logbook
 import traceback
+from uuid import uuid4
 from nacl.public import SealedBox, PublicKey
 from nacl.signing import VerifyKey
 
@@ -225,13 +226,43 @@ class Sharing(BaseAsyncComponent):
         # TODO: leaky abstraction...
         # Retreive the entry and make sure it is not a placeholder
         _, entry_name = normalize_path(path)
-        while True:
-            access, _ = await self.fs._local_tree.retrieve_entry(path)
-            # Cannot share a placeholder !
-            if is_placeholder_access(access):
-                await self.fs.sync(path)
-            else:
-                break
+
+        # First make sure there is no placeholder in the path
+
+        await self.fs.sync(path)
+        access, manifest = self.fs._local_tree.retrieve_entry_sync(
+            path, stop_at_first_placeholder=True
+        )
+        if is_placeholder_access(access):
+            # Concurrent delete then creation of a placeholder
+            raise FSInvalidPath("Path `%s` doesn't exists" % path)
+
+        # Add sharing information to the entry
+
+        if "sharing" not in manifest:
+            manifest["sharing"] = {
+                "owner": self.device.user_id,
+                "guests": [recipient],
+                "notify_sink": uuid4().hex,
+            }
+        else:
+            if recipient == manifest["sharing"]["owner"]:
+                raise SharingInvalidRecipient("Recipient is already the owner of this entry !")
+            if recipient in manifest["sharing"]["guests"]:
+                raise SharingInvalidRecipient("Recipient has already access to this entry !")
+            manifest["sharing"]["guests"] = sorted(manifest["sharing"]["guests"] + [recipient])
+
+        self.fs._local_tree.update_entry(access, manifest)
+        if is_file_manifest(manifest):
+            fd = self.fs._opened_files.open_file(access, manifest)
+            # TODO: dangerous to do fast_forward without sync lock ?
+            fd.fast_forward(new_manifest=manifest)
+        access = await self.fs._sync(access, manifest)
+        if not access:
+            # Concurrent delete of the entry, nothing to share anymore
+            raise FSInvalidPath("Path `%s` doesn't exists" % path)
+
+        # Finally send sharing message to the recipient
 
         sharing_msg = {
             "type": "share",

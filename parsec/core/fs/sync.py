@@ -6,6 +6,10 @@ from parsec.core.fs.utils import normalize_path, is_placeholder_access, is_folde
 
 class FSSyncMixin(FSBase):
     async def sync(self, path: str, recursive=True):
+        """
+        Raises:
+            FSInvalidPath
+        """
         print(que("start syncing %s" % path))
         parent_path, entry_name = normalize_path(path)
         if path == "/":
@@ -35,6 +39,9 @@ class FSSyncMixin(FSBase):
         print(que("done syncing %s" % path))
 
     async def _sync(self, access, manifest, recursive=False):
+        """
+        Returns: the resolved entry access or None if the synchronization aborted
+        """
         if is_folder_manifest(manifest):
             return await self._sync_folder(access, manifest, recursive=recursive)
         else:

@@ -6,6 +6,7 @@ from random import randrange, choice
 from string import ascii_lowercase
 
 from parsec.core.fs import FSInvalidPath
+from parsec.core.sharing import SharingInvalidRecipient
 
 
 FUZZ_PARALLELISM = 10
@@ -115,7 +116,7 @@ async def fuzzer(id, core, fs_state):
 
 
 async def _fuzzer_cmd(id, core, fs_state):
-    x = randrange(0, 100)
+    x = randrange(0, 110)
     await trio.sleep(x * 0.01)
 
     if x < 10:
@@ -201,7 +202,7 @@ async def _fuzzer_cmd(id, core, fs_state):
         except FSInvalidPath:
             fs_state.add_stat(id, "flush_bad")
 
-    else:
+    elif x < 100:
         path = fs_state.get_path()
         try:
             await core.fs.sync(path)
@@ -209,9 +210,17 @@ async def _fuzzer_cmd(id, core, fs_state):
         except FSInvalidPath:
             fs_state.add_stat(id, "sync_bad")
 
+    else:
+        path = fs_state.get_path()
+        try:
+            await core.sharing.share(path, "bob")
+            fs_state.add_stat(id, "share_ok")
+        except (FSInvalidPath, SharingInvalidRecipient):
+            fs_state.add_stat(id, "share_bad")
+
 
 @pytest.mark.trio
-async def test_fuzz_core(request, running_backend, core, alice):
+async def test_fuzz_core(request, running_backend, core, alice, bob):
     await core.login(alice)
     async with trio.open_nursery() as nursery:
         fs_state = FSState()

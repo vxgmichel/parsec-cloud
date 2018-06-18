@@ -8,6 +8,7 @@ from parsec.core.fs.utils import (
     convert_to_remote_manifest,
     convert_to_local_manifest,
 )
+from parsec.core.fs.merge_folders import merge_file
 from parsec.core.backend_storage import BackendConcurrencyError
 
 
@@ -109,43 +110,67 @@ class FSSyncFileMixin(FSBase):
         assert to_sync_manifest["size"] == sum(b["size"] for b in to_sync_manifest["blocks"])
 
         access = fd.access
-        try:
-            if is_placeholder_access(access):
-                print(run("send file placeholder sync %s %s" % (access["id"], to_sync_manifest)))
-                id, rts, wts = await self._manifests_manager.sync_new_entry_with_backend(
-                    access["key"], to_sync_manifest
+        while True:
+            try:
+                if is_placeholder_access(access):
+                    print(
+                        run("send file placeholder sync %s %s" % (access["id"], to_sync_manifest))
+                    )
+                    id, rts, wts = await self._manifests_manager.sync_new_entry_with_backend(
+                        access["key"], to_sync_manifest
+                    )
+                    final_access = {
+                        "key": access["key"],
+                        "id": id,
+                        "rts": rts,
+                        "wts": wts,
+                        "type": "vlob",
+                    }
+                else:
+                    print(run("send file sync %s %s" % (access["id"], to_sync_manifest)))
+                    await self._manifests_manager.sync_with_backend(
+                        access["id"], access["wts"], access["key"], to_sync_manifest
+                    )
+                    final_access = access
+                break
+
+            except BackendConcurrencyError as exc:
+                assert not is_placeholder_access(access)
+                print(bad("file sync concurrency error %s" % access))
+
+                target = await self._manifests_manager.fetch_from_backend(
+                    access["id"], access["rts"], access["key"]
                 )
-                final_access = {
-                    "key": access["key"],
-                    "id": id,
-                    "rts": rts,
-                    "wts": wts,
-                    "type": "vlob",
-                }
-            else:
-                print(run("send file sync %s %s" % (access["id"], to_sync_manifest)))
-                await self._manifests_manager.sync_with_backend(
-                    access["id"], access["wts"], access["key"], to_sync_manifest
-                )
-                final_access = access
+                merged, need_sync = merge_file(to_sync_manifest, target)
+                if not merged:
+                    # Merge couldn't be performed, file has diverged :(
+                    # In order not to lose the blocks we uploaded, we update the
+                    # local manifest before raising the concurrency error.
+                    # Note there is no risk to overwrite a manifest version because
+                    # we hold the lock preventing concurrent syncs and flushes.
+                    new_manifest = convert_to_local_manifest(to_sync_manifest, as_need_sync=True)
+                    assert new_manifest["base_version"] == manifest["base_version"]
+                    self._local_tree.update_entry(access, new_manifest)
+                    fd.fast_forward(snapshot_state=fd_snapshot_state, new_manifest=new_manifest)
 
-        except BackendConcurrencyError as exc:
-            assert not is_placeholder_access(access)
-            print(bad("file sync concurrency error %s" % access))
+                    raise FileSyncConcurrencyError(access) from exc
 
-            # In order not to lose the blocks we uploaded, we update the
-            # local manifest before raising the concurrency error.
-            # Note there is no risk to overwrite a manifest version because
-            # we hold the lock preventing concurrent syncs and flushes.
-            new_manifest = convert_to_local_manifest(to_sync_manifest, as_need_sync=True)
-            assert new_manifest["base_version"] == manifest["base_version"]
-            self._local_tree.update_entry(access, new_manifest)
-            fd.fast_forward(snapshot_state=fd_snapshot_state, new_manifest=new_manifest)
+                if not need_sync:
+                    print(info("file sync concurrency merged, sync not needed %s" % access["id"]))
+                    # It maybe possible the changes that cause the concurrency
+                    # error were the same than the one we wanted to make in the
+                    # first place (e.g. when removing sharing information)
+                    final_access = access
+                    break
 
-            raise FileSyncConcurrencyError(access) from exc
+                # Merge successful and sync is still needed
+                to_sync_manifest = merged
+                to_sync_manifest["version"] += 1
 
         final_manifest = convert_to_local_manifest(to_sync_manifest)
         fd.fast_forward(snapshot_state=fd_snapshot_state, new_manifest=final_manifest)
+        # Must update access (not final access) because `_sync_placeholder` will
+        # do the move for us
         self._local_tree.overwrite_entry(access, final_manifest)
 
         return final_access

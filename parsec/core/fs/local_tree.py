@@ -94,7 +94,7 @@ class LocalTree:
             # removed from cache during another retrieve_entry)
             return [self.retrieve_entry_sync(path) for path in paths]
 
-    def retrieve_entry_sync(self, path):
+    def retrieve_entry_sync(self, path, stop_at_first_placeholder=False):
         hops = [x for x in path.split("/") if x]
         access = None
         current = self._root_manifest_cache
@@ -104,6 +104,8 @@ class LocalTree:
             except KeyError:
                 # Either current is not a folder or it has no valid child
                 raise FSInvalidPath("Path `%s` doesn't exists" % path)
+            if stop_at_first_placeholder and is_placeholder_access(access):
+                break
             try:
                 current = self._manifests_cache[access["id"]]
             except KeyError:

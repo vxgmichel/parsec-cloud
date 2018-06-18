@@ -41,7 +41,53 @@ async def test_share_file(
     bob_file_stat = await core2.fs.stat("/shared-with-alice/foo.txt")
     assert bob_file_stat == alice_file_stat
 
-    bob_file_data = await core.fs.file_read("/foo.txt")
+    bob_file_data = await core2.fs.file_read("/shared-with-alice/foo.txt")
+    assert bob_file_data == b"Hello from Alice !"
+
+    assert core.fs.get_last_processed_message() == 0
+    assert core2.fs.get_last_processed_message() == 1
+
+
+@pytest.mark.trio
+@pytest.mark.parametrize("already_synced", [True, False])
+async def test_share_nested_folder(
+    already_synced, core, core2, alice_core_sock, bob_core2_sock, running_backend
+):
+    assert core.fs.get_last_processed_message() == 0
+    assert core2.fs.get_last_processed_message() == 0
+
+    # Bob stays idle waiting for a sharing from alice
+    await bob_core2_sock.send({"cmd": "event_subscribe", "event": "new_sharing"})
+    rep = await bob_core2_sock.recv()
+    assert rep == {"status": "ok"}
+    await bob_core2_sock.send({"cmd": "event_listen"})
+
+    # First, create a folder and sync it on backend
+    await core.fs.folder_create("/foo")
+    await core.fs.folder_create("/foo/spam")
+    await core.fs.folder_create("/foo/spam/zob")
+    await core.fs.file_create("/foo/spam/bar.txt")
+    await core.fs.file_write("/foo/spam/bar.txt", b"Hello from Alice !")
+    if already_synced:
+        await core.fs.sync("/foo/spam")
+
+    # Now we can share this file with Bob
+    await alice_core_sock.send({"cmd": "share", "path": "/foo/spam", "recipient": "bob"})
+    rep = await alice_core_sock.recv()
+    assert rep == {"status": "ok"}
+
+    # Bob should get a notification
+    with trio.move_on_after(seconds=1) as cancel_scope:
+        rep = await bob_core2_sock.recv()
+    assert not cancel_scope.cancelled_caught
+    assert rep == {"status": "ok", "event": "new_sharing", "subject": "/shared-with-alice/spam"}
+
+    # Now Bob can access the file just like Alice would do
+    alice_file_stat = await core.fs.stat("/foo/spam")
+    bob_file_stat = await core2.fs.stat("/shared-with-alice/spam")
+    assert bob_file_stat == alice_file_stat
+
+    bob_file_data = await core2.fs.file_read("/shared-with-alice/spam/bar.txt")
     assert bob_file_data == b"Hello from Alice !"
 
     assert core.fs.get_last_processed_message() == 0

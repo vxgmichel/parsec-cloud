@@ -99,7 +99,7 @@ def encrypt_for_local(key: bytes, msg: dict) -> bytes:
         MessageEncryptionError: if key is invalid.
     """
     try:
-        encoded_msg = json.dumps(msg).encode()
+        encoded_msg = json.dumps(msg).encode("utf-8")
     except TypeError as exc:
         raise MessageFormatError("Cannot encode message as JSON") from exc
 
@@ -123,7 +123,7 @@ def decrypt_for_local(key: bytes, ciphered_msg: bytes) -> dict:
         raise MessageEncryptionError() from exc
 
     try:
-        return json.loads(encoded_msg)
+        return json.loads(encoded_msg.decode("utf-8"))
     except json.JSONDecodeError as exc:
         raise MessageFormatError("Message is not valid json data") from exc
 
@@ -169,7 +169,7 @@ def encrypt_for(author: Device, recipient: RemoteUser, msg: dict) -> bytes:
         MessageSignatureError: if signature fails.
     """
     try:
-        encoded_msg = json.dumps(msg).encode()
+        encoded_msg = json.dumps(msg).encode("utf-8")
     except TypeError as exc:
         raise MessageFormatError("Cannot encode message as JSON") from exc
 
@@ -223,7 +223,7 @@ def verify_signature_from(author: RemoteDevice, signed_text: bytes) -> dict:
         raise MessageSignatureError() from exc
 
     try:
-        return json.loads(encoded_msg)
+        return json.loads(encoded_msg.decode("utf-8"))
 
     except json.JSONDecodeError as exc:
         raise MessageFormatError("Message is not valid json data") from exc
@@ -239,7 +239,7 @@ def encrypt_with_secret_key(author: Device, key: bytes, msg: dict) -> bytes:
         MessageEncryptionError: if encryption operation fails.
     """
     try:
-        encoded_msg = json.dumps(msg).encode()
+        encoded_msg = json.dumps(msg).encode("utf-8")
     except TypeError as exc:
         raise MessageFormatError("Cannot encode message as JSON") from exc
 

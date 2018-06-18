@@ -19,7 +19,7 @@ class FileSyncConcurrencyError(Exception):
 
 
 class FSSyncFileMixin(FSBase):
-    async def _sync_file(self, access, manifest):
+    async def _sync_file(self, access, manifest, notify=()):
         """
         Raises:
             FileSyncConcurrencyError
@@ -53,7 +53,7 @@ class FSSyncFileMixin(FSBase):
                 await self._sync_file_look_for_remote_changes(fd)
                 return access
             else:
-                return await self._sync_file_actual_sync(fd, manifest)
+                return await self._sync_file_actual_sync(fd, manifest, notify)
 
     async def _sync_file_look_for_remote_changes(self, fd):
         access = fd.access
@@ -84,7 +84,7 @@ class FSSyncFileMixin(FSBase):
         else:
             print(good("file sync not needed (and no remote changes) %s" % access["id"]))
 
-    async def _sync_file_actual_sync(self, fd, manifest):
+    async def _sync_file_actual_sync(self, fd, manifest, notify):
         fd_snapshot_state = fd.create_snapshot_state()
         to_sync_manifest = convert_to_remote_manifest(manifest)
 
@@ -117,7 +117,7 @@ class FSSyncFileMixin(FSBase):
                         run("send file placeholder sync %s %s" % (access["id"], to_sync_manifest))
                     )
                     id, rts, wts = await self._manifests_manager.sync_new_entry_with_backend(
-                        access["key"], to_sync_manifest
+                        access["key"], to_sync_manifest, notify
                     )
                     final_access = {
                         "key": access["key"],
@@ -129,7 +129,7 @@ class FSSyncFileMixin(FSBase):
                 else:
                     print(run("send file sync %s %s" % (access["id"], to_sync_manifest)))
                     await self._manifests_manager.sync_with_backend(
-                        access["id"], access["wts"], access["key"], to_sync_manifest
+                        access["id"], access["wts"], access["key"], to_sync_manifest, notify
                     )
                     final_access = access
                 break

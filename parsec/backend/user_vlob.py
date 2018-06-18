@@ -18,6 +18,7 @@ class cmd_READ_Schema(BaseCmdSchema):
 class cmd_UPDATE_Schema(BaseCmdSchema):
     version = fields.Integer(validate=lambda n: n > 0)
     blob = fields.Base64Bytes(required=True)
+    notify_sinks = fields.List(fields.String())
 
 
 class BaseUserVlobComponent:

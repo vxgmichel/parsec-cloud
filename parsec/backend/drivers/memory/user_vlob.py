@@ -5,8 +5,9 @@ from collections import defaultdict
 
 
 class MemoryUserVlobComponent(BaseUserVlobComponent):
-    def __init__(self, *args):
+    def __init__(self, update_sink_vlob, *args):
         super().__init__(*args)
+        self._update_sink_vlob = update_sink_vlob
         self.vlobs = defaultdict(list)
 
     async def read(self, user_id, version=None):
@@ -24,7 +25,10 @@ class MemoryUserVlobComponent(BaseUserVlobComponent):
         except IndexError:
             raise VersionError("Wrong blob version.")
 
-    async def update(self, user_id, version, blob):
+    async def update(self, user_id, version, blob, notify_sinks=()):
+        for sink_id in notify_sinks:
+            await self._update_sink_vlob(sink_id, user_id.encode("utf-8"))
+
         vlobs = self.vlobs[user_id]
         if len(vlobs) != version - 1:
             raise VersionError("Wrong blob version.")

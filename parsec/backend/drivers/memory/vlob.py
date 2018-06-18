@@ -17,7 +17,10 @@ class MemoryVlobComponent(BaseVlobComponent):
         super().__init__(*args)
         self.vlobs = {}
 
-    async def create(self, id, rts, wts, blob):
+    async def create(self, id, rts, wts, blob, notify_sinks=()):
+        for sink_id in notify_sinks:
+            await self._update_sink_vlob(sink_id, id.encode("utf-8"))
+
         vlob = MemoryVlob(id, rts, wts, blob)
         self.vlobs[vlob.id] = vlob
         return VlobAtom(

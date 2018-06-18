@@ -129,7 +129,7 @@ class BackendApp:
 
             self.user = MemoryUserComponent(self.signal_ns)
             self.vlob = MemoryVlobComponent(self.signal_ns)
-            self.user_vlob = MemoryUserVlobComponent(self.signal_ns)
+            self.user_vlob = MemoryUserVlobComponent(self.vlob._update_sink_vlob, self.signal_ns)
             self.message = MemoryMessageComponent(self.signal_ns)
 
         else:

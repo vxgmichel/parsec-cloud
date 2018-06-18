@@ -40,7 +40,7 @@ def find_conflicting_name_for_child_entry(parent_manifest, original_name):
 
 
 class FSSyncFolderMixin(FSBase):
-    async def _sync_folder(self, access, manifest, recursive=False):
+    async def _sync_folder(self, access, manifest, recursive=False, notify=()):
         """
         Args:
             recursive: whether the folder's children must be synced before itself.
@@ -70,6 +70,12 @@ class FSSyncFolderMixin(FSBase):
                 access_id = access["id"]
 
         with self._sync_locks.lock(access_id):
+            sharing = manifest.get("sharing")
+            if sharing:
+                children_notify = (*notify, sharing["notify_sink"])
+            else:
+                children_notify = notify
+
             # Synchronizing a folder is divided into three steps:
             # - first synchronizing it children
             # - then sychronize itself
@@ -79,7 +85,9 @@ class FSSyncFolderMixin(FSBase):
             # update can occurs at anytime.
 
             # Synchronizing children
-            await self._sync_folder_sync_children(access, manifest, recursive)
+            await self._sync_folder_sync_children(
+                access, manifest, recursive, notify=children_notify
+            )
 
             try:
                 # The trick here is to retreive the current version of the manifest
@@ -110,7 +118,7 @@ class FSSyncFolderMixin(FSBase):
                 final_access = access
             else:
                 final_access, target_remote_manifest = await self._sync_folder_actual_sync(
-                    access, base_manifest
+                    access, base_manifest, notify=notify
                 )
 
             # Finally merge with the current version of the manifest which may have
@@ -135,7 +143,7 @@ class FSSyncFolderMixin(FSBase):
 
         return final_access
 
-    async def _sync_folder_sync_children(self, access, manifest, recursive):
+    async def _sync_folder_sync_children(self, access, manifest, recursive, notify):
         if not recursive:
             return
 
@@ -155,7 +163,7 @@ class FSSyncFolderMixin(FSBase):
 
         # Synchronize the children.
         for child_name, child_access in to_sync.items():
-            async with self._rename_entry_on_concurrency_error(access):
+            async with self._rename_entry_on_concurrency_error(access, notify=notify):
                 try:
                     child_manifest = self._local_tree.retrieve_entry_by_access(child_access)
                 except KeyError:
@@ -167,11 +175,17 @@ class FSSyncFolderMixin(FSBase):
                         info("asked to sync placeholder %s %s" % (child_name, child_access["id"]))
                     )
                     await self._sync_placeholder(
-                        access, child_access, child_manifest, recursive=child_recursive
+                        access,
+                        child_access,
+                        child_manifest,
+                        recursive=child_recursive,
+                        notify=notify,
                     )
                 else:
                     print(info("asked to sync %s %s" % (child_name, child_access["id"])))
-                    await self._sync(child_access, child_manifest, recursive=child_recursive)
+                    await self._sync(
+                        child_access, child_manifest, recursive=child_recursive, notify=notify
+                    )
 
     async def _sync_folder_look_for_remote_changes(self, access, base_manifest):
         # This folder hasn't been modified locally, just download
@@ -195,7 +209,7 @@ class FSSyncFolderMixin(FSBase):
             return None
         return target_remote_manifest
 
-    async def _sync_folder_actual_sync(self, access, manifest):
+    async def _sync_folder_actual_sync(self, access, manifest, notify):
         access_id = access["id"] if access else "<root>"
         to_sync_manifest = convert_to_remote_manifest(manifest)
 
@@ -204,11 +218,13 @@ class FSSyncFolderMixin(FSBase):
             try:
                 if not access:
                     print(run("send folder sync %s %s" % (access_id, to_sync_manifest)))
-                    await self._manifests_manager.sync_user_manifest_with_backend(to_sync_manifest)
+                    await self._manifests_manager.sync_user_manifest_with_backend(
+                        to_sync_manifest, notify=notify
+                    )
                 elif is_placeholder_access(access):
                     print(run("send folder placeholder sync %s %s" % (access_id, to_sync_manifest)))
                     id, rts, wts = await self._manifests_manager.sync_new_entry_with_backend(
-                        access["key"], to_sync_manifest
+                        access["key"], to_sync_manifest, notify=notify
                     )
                     access = {
                         "key": access["key"],
@@ -220,7 +236,7 @@ class FSSyncFolderMixin(FSBase):
                 else:
                     print(run("send folder sync %s %s" % (access_id, to_sync_manifest)))
                     await self._manifests_manager.sync_with_backend(
-                        access["id"], access["wts"], access["key"], to_sync_manifest
+                        access["id"], access["wts"], access["key"], to_sync_manifest, notify=notify
                     )
                 break
 
@@ -262,9 +278,9 @@ class FSSyncFolderMixin(FSBase):
 
         return access, to_sync_manifest
 
-    async def _sync_placeholder(self, parent_access, access, manifest, recursive=False):
+    async def _sync_placeholder(self, parent_access, access, manifest, recursive=False, notify=()):
         assert is_placeholder_access(access)
-        new_access = await self._sync(access, manifest, recursive=recursive)
+        new_access = await self._sync(access, manifest, recursive=recursive, notify=notify)
         if not new_access:
             # Synchronization has failed due to a concurrent remove of the placeholder
             return
@@ -294,7 +310,7 @@ class FSSyncFolderMixin(FSBase):
         print(good("placeholder resolved %s => %s" % (access["id"], new_access)))
 
     @asynccontextmanager
-    async def _rename_entry_on_concurrency_error(self, parent_access):
+    async def _rename_entry_on_concurrency_error(self, parent_access, notify=()):
         try:
             yield
 
@@ -354,4 +370,4 @@ class FSSyncFolderMixin(FSBase):
             except KeyError:
                 # Nothing to sync...
                 return
-            await self._sync_placeholder(parent_access, dup_access, dup_manifest)
+            await self._sync_placeholder(parent_access, dup_access, dup_manifest, notify=notify)

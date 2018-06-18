@@ -94,10 +94,11 @@ class LocalTree:
             # removed from cache during another retrieve_entry)
             return [self.retrieve_entry_sync(path) for path in paths]
 
-    def retrieve_entry_sync(self, path, stop_at_first_placeholder=False):
+    def retrieve_entry_sync(self, path, stop_at_first_placeholder=False, with_notify_sinks=False):
         hops = [x for x in path.split("/") if x]
         access = None
         current = self._root_manifest_cache
+        notify_sinks = {current["sharing"]["notify_sink"]}
         for hop in hops:
             try:
                 access = current["children"][hop]
@@ -114,13 +115,18 @@ class LocalTree:
                 else:
                     # Local cache miss, nothing we can do here
                     raise NotInLocalTreeError(access)
+            if "sharing" in current:
+                notify_sinks.add(current["sharing"]["notify_sink"])
 
-        return access, copy_manifest(current)
+        if with_notify_sinks:
+            return access, copy_manifest(current), notify_sinks
+        else:
+            return access, copy_manifest(current)
 
-    async def retrieve_entry(self, path):
+    async def retrieve_entry(self, path, with_notify_sinks=False):
         while True:
             try:
-                return self.retrieve_entry_sync(path)
+                return self.retrieve_entry_sync(path, with_notify_sinks=with_notify_sinks)
             except NotInLocalTreeError as exc:
                 # The path is not fully available in local, hence we must
                 # fetch from the backend the missing part and retry

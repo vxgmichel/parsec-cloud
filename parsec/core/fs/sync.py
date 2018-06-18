@@ -13,10 +13,14 @@ class FSSyncMixin(FSBase):
         print(que("start syncing %s" % path))
         parent_path, entry_name = normalize_path(path)
         if path == "/":
-            access, manifest = await self._local_tree.retrieve_entry(path)
-            await self._sync(access, manifest, recursive=recursive)
+            access, manifest, notify = await self._local_tree.retrieve_entry(
+                path, with_notify_sinks=True
+            )
+            await self._sync(access, manifest, recursive=recursive, notify=notify)
         else:
-            access, manifest = await self._local_tree.retrieve_entry(path)
+            access, manifest, notify = await self._local_tree.retrieve_entry(
+                path, with_notify_sinks=True
+            )
             if is_placeholder_access(access):
                 # We must sync parents before ourself. The trick is we want to sync
                 # the minimal path to the entry we were originally asked to sync
@@ -35,14 +39,14 @@ class FSSyncMixin(FSBase):
                         break
                 await self.sync(curr_ancestor_path, recursive=to_sync_recursive_map)
             else:
-                await self._sync(access, manifest, recursive=recursive)
+                await self._sync(access, manifest, recursive=recursive, notify=notify)
         print(que("done syncing %s" % path))
 
-    async def _sync(self, access, manifest, recursive=False):
+    async def _sync(self, access, manifest, recursive=False, notify=()):
         """
         Returns: the resolved entry access or None if the synchronization aborted
         """
         if is_folder_manifest(manifest):
-            return await self._sync_folder(access, manifest, recursive=recursive)
+            return await self._sync_folder(access, manifest, recursive=recursive, notify=notify)
         else:
-            return await self._sync_file(access, manifest)
+            return await self._sync_file(access, manifest, notify=notify)

@@ -31,6 +31,7 @@ class VlobAtom:
 class cmd_CREATE_Schema(BaseCmdSchema):
     # TODO: blob must be present
     blob = fields.Base64Bytes(missing=to_jsonb64(b""))
+    notify_sinks = fields.List(fields.String())
 
 
 class cmd_READ_Schema(BaseCmdSchema):
@@ -56,7 +57,7 @@ class BaseVlobComponent:
         id = uuid4().hex
         rts = uuid4().hex
         wts = uuid4().hex
-        atom = await self.create(id, rts, wts, msg["blob"])
+        atom = await self.create(id, rts, wts, **msg)
         return {
             "status": "ok",
             "id": atom.id,

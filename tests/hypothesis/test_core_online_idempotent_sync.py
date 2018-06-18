@@ -26,12 +26,7 @@ def check_fs_dump(entry):
 @pytest.mark.slow
 @pytest.mark.trio
 async def test_online_core_idempotent_sync(
-    TrioDriverRuleBasedStateMachine,
-    mocked_local_storage_connection,
-    tcp_stream_spy,
-    backend_addr,
-    tmpdir,
-    alice,
+    TrioDriverRuleBasedStateMachine, tcp_stream_spy, backend_addr, tmpdir, alice
 ):
 
     st_entry_type = st.sampled_from(["file", "folder"])
@@ -42,15 +37,13 @@ async def test_online_core_idempotent_sync(
         count = 0
 
         async def trio_runner(self, task_status):
-            mocked_local_storage_connection.reset()
 
             type(self).count += 1
-            backend_config = {"blockstore_postgresql": True}
-            core_config = {
-                "base_settings_path": tmpdir.mkdir("try-%s" % self.count).strpath,
-                "backend_addr": backend_addr,
-            }
+            workdir = tmpdir.mkdir("try-%s" % self.count)
 
+            backend_config = {"blockstore_postgresql": True}
+            core_config = {"base_settings_path": workdir.strpath, "backend_addr": backend_addr}
+            alice.local_storage_db_path = str(workdir / "alice-local_storage")
             self.core_cmd = self.communicator.send
 
             async with backend_factory(**backend_config) as backend:

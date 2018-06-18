@@ -181,7 +181,7 @@ class DevicesManager:
 
     def load_device(self, device_id, password=None):
         device_conf_path = os.path.join(self.devices_conf_path, device_id)
-        local_storage_db_path = os.path.join(device_conf_path, "local_storage.sqlite")
+        local_storage_db_path = os.path.join(device_conf_path, "local_storage")
 
         device_conf, errors = self._load_device_conf(device_id)
         if errors:

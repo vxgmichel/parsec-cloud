@@ -102,12 +102,7 @@ class OracleFSWithSync:
 @pytest.mark.slow
 @pytest.mark.trio
 async def test_online_core_tree_and_sync(
-    TrioDriverRuleBasedStateMachine,
-    mocked_local_storage_connection,
-    tcp_stream_spy,
-    backend_addr,
-    tmpdir,
-    alice,
+    TrioDriverRuleBasedStateMachine, tcp_stream_spy, backend_addr, tmpdir, alice
 ):
     class RestartCore(Exception):
         def __init__(self, reset_local_storage=False):
@@ -128,7 +123,7 @@ class ResetCore(Exception):
     pass
 
 @pytest.mark.trio
-async def test_reproduce(tmpdir, running_backend, backend_addr, alice, mocked_local_storage_connection):
+async def test_reproduce(tmpdir, running_backend, backend_addr, alice):
     config = {{
         "base_settings_path": tmpdir.strpath,
         "backend_addr": backend_addr,
@@ -159,7 +154,7 @@ async def test_reproduce(tmpdir, running_backend, backend_addr, alice, mocked_lo
 
         except ResetCore:
             need_reset_sync = True
-            mocked_local_storage_connection.reset()
+            alice.local_storage_db_path += '-reset'
 
 def rule_selector():
     {body}
@@ -171,15 +166,12 @@ def rule_selector():
         count = 0
 
         async def trio_runner(self, task_status):
-            mocked_local_storage_connection.reset()
-
             type(self).count += 1
-            backend_config = {"blockstore_postgresql": True}
-            core_config = {
-                "base_settings_path": tmpdir.mkdir("try-%s" % self.count).strpath,
-                "backend_addr": backend_addr,
-            }
+            workdir = tmpdir.mkdir("try-%s" % self.count)
 
+            backend_config = {"blockstore_postgresql": True}
+            core_config = {"base_settings_path": workdir.strpath, "backend_addr": backend_addr}
+            alice.local_storage_db_path = str(workdir / "alice-local_storage")
             self.sys_cmd = lambda x: self.communicator.send(("sys", x))
             self.core_cmd = lambda x: self.communicator.send(("core", x))
             self.oracle_fs = OracleFSWithSync()
@@ -241,7 +233,7 @@ def rule_selector():
                             except RestartCore as exc:
                                 if exc.reset_local_storage:
                                     on_ready = reset_core_done
-                                    mocked_local_storage_connection.reset()
+                                    alice.local_storage_db_path += "-reset"
                                 else:
                                     on_ready = restart_core_done
 

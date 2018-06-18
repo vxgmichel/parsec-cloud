@@ -28,7 +28,7 @@ class FileOracle:
 @pytest.mark.slow
 @pytest.mark.trio
 async def test_core_offline_restart_and_rwfile(
-    TrioDriverRuleBasedStateMachine, mocked_local_storage_connection, backend_addr, tmpdir, alice
+    TrioDriverRuleBasedStateMachine, backend_addr, tmpdir, alice
 ):
     class RestartCore(Exception):
         pass
@@ -86,13 +86,15 @@ def rule_selector():
         count = 0
 
         async def trio_runner(self, task_status):
-            mocked_local_storage_connection.reset()
             type(self).count += 1
+            workdir = tmpdir.mkdir("try-%s" % self.count)
+
             config = {
-                "base_settings_path": tmpdir.mkdir("try-%s" % self.count).strpath,
+                "base_settings_path": workdir.strpath,
                 "backend_addr": backend_addr,
                 "block_size": BLOCK_SIZE,
             }
+            alice.local_storage_db_path = str(workdir / "alice-local_storage")
 
             self.sys_cmd = lambda x: self.communicator.send(("sys", x))
             self.core_cmd = lambda x: self.communicator.send(("core", x))

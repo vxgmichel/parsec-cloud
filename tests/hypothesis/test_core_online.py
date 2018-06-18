@@ -7,25 +7,17 @@ from tests.common import connect_core, core_factory, backend_factory, run_app
 
 @pytest.mark.slow
 @pytest.mark.trio
-async def test_online(
-    TrioDriverRuleBasedStateMachine,
-    mocked_local_storage_connection,
-    tcp_stream_spy,
-    backend_addr,
-    tmpdir,
-    alice,
-):
+async def test_online(TrioDriverRuleBasedStateMachine, tcp_stream_spy, backend_addr, tmpdir, alice):
     class CoreOnline(TrioDriverRuleBasedStateMachine):
         count = 0
 
         async def trio_runner(self, task_status):
-            mocked_local_storage_connection.reset()
             type(self).count += 1
+            workdir = tmpdir.mkdir("try-%s" % self.count)
+
             backend_config = {"blockstore_postgresql": True}
-            core_config = {
-                "base_settings_path": tmpdir.mkdir("try-%s" % self.count).strpath,
-                "backend_addr": backend_addr,
-            }
+            core_config = {"base_settings_path": workdir.strpath, "backend_addr": backend_addr}
+            alice.local_storage_db_path = str(workdir / "alice-local_storage")
             self.core_cmd = self.communicator.send
 
             async with backend_factory(**backend_config) as backend:

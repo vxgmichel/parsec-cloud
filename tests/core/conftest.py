@@ -17,8 +17,8 @@ async def backend_connections_multiplexer(nursery, alice, running_backend):
 
 
 @pytest.fixture
-async def local_storage(nursery):
-    ls = LocalStorage(":memory:")
+async def local_storage(nursery, tmpdir):
+    ls = LocalStorage(tmpdir / "local_storage-fixture")
     await ls.init(nursery)
     return ls
 

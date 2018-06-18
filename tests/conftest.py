@@ -102,7 +102,7 @@ def alice(tmpdir):
             b"\xa7\n\xb2\x94\xbb\xe6\x03\xd3\xd0\xd3\xce\x95\xe6\x8b\xfe5`("
             b"\x15\xc0UL\xe9\x1dTf^ m\xb7\xbc\\"
         ),
-        tmpdir.join("alice@test.sqlite").strpath,
+        "%s/alice@test-local_storage" % tmpdir.strpath,
     )
 
 
@@ -115,7 +115,7 @@ def alice2(tmpdir):
             b"\xa6\xcd\x87\x90\xd7\xabJ\x1f$\x87\xc4"
         ),
         (b"s\x9cA\xb0|\xa4\x1a84z\xfe\xbe\x16\xc0y1.\x05Z\xe2#\x9em>WQ\xd0\x82y\t\x94\x8b"),
-        tmpdir.join("alice@otherdevice.sqlite").strpath,
+        "%s/alice@otherdevice-local_storage" % tmpdir.strpath,
     )
 
 
@@ -131,7 +131,7 @@ def bob(tmpdir):
             b"!\x94\x93\xda\x0cC\xc6\xeb\x80\xbc$\x8f\xaf\xeb\x83\xcb`T\xcf"
             b"\x96R\x97{\xd5Nx\x0c\x04\xe96a\xb0"
         ),
-        tmpdir.join("bob@test.sqlite").strpath,
+        "%s/bob@test-local_storage" % tmpdir.strpath,
     )
 
 
@@ -147,7 +147,7 @@ def mallory(tmpdir):
             b"\xcd \x7f\xf5\x91\x17=\xda\x856Sz\xe0\xf9\xc6\x82!O7g9\x01`s\xdd"
             b"\xeeoj\xcb\xe7\x0e\xc5"
         ),
-        tmpdir.join("mallory@test.sqlite").strpath,
+        "%s/mallory@test-local_storage" % tmpdir.strpath,
     )
 
 
@@ -319,39 +319,6 @@ async def bob_core2_sock(core2, bob):
     async with connect_core(core2) as sock:
         await core2.login(bob)
         yield sock
-
-
-@pytest.fixture
-def mocked_local_storage_connection():
-    # Persistent local storage is achieve by using sqlite storing in FS.
-    # However it is a lot faster to store in memory and just pass around the
-    # sqlite connection object.
-    import sqlite3
-
-    class CloseProtectedConnection(sqlite3.Connection):
-        def close(self):
-            pass
-
-    class InMemoryDatabaseManager:
-        def __init__(self, vanilla_connect):
-            self.vanilla_connect = vanilla_connect
-            self.databases = {}
-
-        def reset(self):
-            # Now we can actually close the connections
-            for db in self.databases.values():
-                sqlite3.Connection.close(db)
-            self.databases = {}
-
-        def connect(self, database, *args, **kwargs):
-            if database not in self.databases:
-                connection = self.vanilla_connect(":memory:", factory=CloseProtectedConnection)
-                self.databases[database] = connection
-            return self.databases[database]
-
-    manager = InMemoryDatabaseManager(sqlite3.connect)
-    with patch("sqlite3.connect", new=manager.connect):
-        yield manager
 
 
 @pytest.fixture

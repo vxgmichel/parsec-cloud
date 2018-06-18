@@ -40,13 +40,7 @@ def compare_fs_dumps(entry_1, entry_2):
 @pytest.mark.slow
 @pytest.mark.trio
 async def test_online_core_tree_and_sync_multicore(
-    TrioDriverRuleBasedStateMachine,
-    mocked_local_storage_connection,
-    tcp_stream_spy,
-    backend_addr,
-    tmpdir,
-    alice,
-    alice2,
+    TrioDriverRuleBasedStateMachine, tcp_stream_spy, backend_addr, tmpdir, alice, alice2
 ):
     @failure_reproducer(
         """
@@ -70,15 +64,13 @@ async def test_reproduce(running_backend, core, alice_core_sock, core2, alice2_c
         count = 0
 
         async def trio_runner(self, task_status):
-            mocked_local_storage_connection.reset()
-
             type(self).count += 1
-            backend_config = {"blockstore_postgresql": True}
-            core_config = {
-                "base_settings_path": tmpdir.mkdir("try-%s" % self.count).strpath,
-                "backend_addr": backend_addr,
-            }
+            workdir = tmpdir.mkdir("try-%s" % self.count)
 
+            backend_config = {"blockstore_postgresql": True}
+            core_config = {"base_settings_path": workdir.strpath, "backend_addr": backend_addr}
+            alice.local_storage_db_path = str(workdir / "alice-local_storage")
+            alice2.local_storage_db_path = str(workdir / "alice2-local_storage")
             self.core_cmd = lambda x, y: self.communicator.send((x, y))
 
             async with backend_factory(**backend_config) as backend:

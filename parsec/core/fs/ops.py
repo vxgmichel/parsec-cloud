@@ -1,3 +1,4 @@
+from parsec.signals import get_signal
 from parsec.core.fs.base import FSBase
 from parsec.core.fs.utils import (
     FSInvalidPath,
@@ -26,6 +27,7 @@ class FSOpsMixin(FSBase):
         access = self._local_tree.insert_new_entry(manifest)
         parent_manifest["children"][file_name] = access
         self._local_tree.update_entry(parent_access, parent_manifest)
+        get_signal("fs_entry_updated").send(self, access=access, path=path)
 
     async def file_create(self, path: str):
         manifest = new_file_manifest(self._device)
@@ -88,6 +90,7 @@ class FSOpsMixin(FSBase):
 
         fd = self._opened_files.open_file(access, manifest)
         fd.write(buffer, offset)
+        get_signal("fs_entry_updated").send(self, access=access, path=path)
 
     async def file_truncate(self, path: str, length: int):
         if path == "/":
@@ -99,6 +102,7 @@ class FSOpsMixin(FSBase):
 
         fd = self._opened_files.open_file(access, manifest)
         fd.truncate(length)
+        get_signal("fs_entry_updated").send(self, access=access, path=path)
 
     async def file_flush(self, path: str):
         if path == "/":
@@ -163,6 +167,7 @@ class FSOpsMixin(FSBase):
             parent_manifest["children"][dst_file_name] = target_access
 
             self._local_tree.update_entry(parent_access, parent_manifest)
+            get_signal("fs_entry_updated").send(self, access=parent_access, path=src_parent_path)
 
         else:
             (src_parent_access, src_parent_manifest), (
@@ -189,6 +194,12 @@ class FSOpsMixin(FSBase):
 
             self._local_tree.update_entry(src_parent_access, src_parent_manifest)
             self._local_tree.update_entry(dst_parent_access, dst_parent_manifest)
+            get_signal("fs_entry_updated").send(
+                self, access=src_parent_access, path=src_parent_path
+            )
+            get_signal("fs_entry_updated").send(
+                self, access=dst_parent_access, path=dst_parent_path
+            )
 
     async def delete(self, path: str):
         if path == "/":
@@ -203,6 +214,7 @@ class FSOpsMixin(FSBase):
 
         self._recursive_clean_local_modifications(entry_access)
         self._local_tree.update_entry(parent_access, parent_manifest)
+        get_signal("fs_entry_updated").send(self, access=parent_access, path=parent_path)
 
     def _recursive_clean_local_modifications(self, entry_access):
         manifest = self._local_tree.delete_entry(entry_access)

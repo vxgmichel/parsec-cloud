@@ -1,23 +1,17 @@
-import os
 import trio
+import pendulum
 from unittest.mock import Mock
 from inspect import iscoroutinefunction
 from async_generator import asynccontextmanager
 
-try:
-    from libfaketime import freeze_time
-
-    # see https://github.com/simon-weber/python-libfaketime/issues/45
-    os.environ.setdefault("DONT_FAKE_MONOTONIC", "1")
-except ImportError:
-    from freezegun import freeze_time
-
 from parsec.core import Core, CoreConfig
-
 from parsec.handshake import ClientHandshake, AnonymousClientHandshake
 from parsec.networking import CookedSocket
-
 from parsec.backend import BackendApp, BackendConfig
+
+
+def freeze_time(timestr):
+    return pendulum.test(pendulum.parse(timestr))
 
 
 class AsyncMock(Mock):

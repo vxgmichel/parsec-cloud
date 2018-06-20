@@ -57,6 +57,7 @@ class Synchronizer(BaseAsyncComponent):
                 # Quick exit if nothing is old enough to be synchronized
                 first_ts, first_path = self._sync_candidates_journal[0]
                 if now - first_ts < MIN_WAIT:
+                    await trio.sleep(now - first_ts)
                     continue
 
                 # Give priority to old modification

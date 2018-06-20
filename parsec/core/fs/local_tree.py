@@ -2,6 +2,7 @@ import trio
 import pendulum
 from contextlib import contextmanager
 
+from parsec.signals import get_signal
 from parsec.core.fs.utils import (
     FSInvalidPath,
     new_user_manifest,
@@ -19,12 +20,20 @@ class NotInLocalTreeError(Exception):
         self.access = access
 
 
+class ManifestCache(dict):
+    def __setattr__(self, key, value):
+        sharing = value.get('sharing')
+        if sharing:
+            get_signal("fs_local_notify_sink_loaded").send(self, sharing['notify_sink'])
+        super().__setattr__(key, value)
+
+
 class LocalTree:
     def __init__(self, device, manifests_manager):
         self.device = device
         self.manifests_manager = manifests_manager
         self._root_manifest_cache = None
-        self._manifests_cache = {}
+        self._manifests_cache = ManifestCache()
         self._resolved_placeholder_accesses = {}
 
         # Fetch from local storage the data tree

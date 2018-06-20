@@ -10,6 +10,9 @@ class SignalsContext:
         self.signals_namespace = Namespace()
         self._token = None
 
+    def get_signal(self, name):
+        return self.signals_namespace.signal(name)
+
     def push(self):
         self._token = _signals_namespace.set(self.signals_namespace)
 

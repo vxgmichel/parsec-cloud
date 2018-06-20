@@ -9,6 +9,7 @@ from parsec.core.base import BaseAsyncComponent, NotInitializedError
 from parsec.core.sharing import Sharing
 from parsec.core.fs import FS
 from parsec.core.synchronizer import Synchronizer
+from parsec.core.remote_listener import RemoteListener
 from parsec.core.devices_manager import DevicesManager
 from parsec.core.backend_connections_multiplexer import BackendConnectionsMultiplexer
 from parsec.core.backend_events_manager import BackendEventsManager
@@ -73,6 +74,7 @@ class Core(BaseAsyncComponent):
             "fs",
             "fuse_manager",
             "synchronizer",
+            "remote_listener",
             "sharing",
         )
         for cname in self.components_dep_order:
@@ -120,6 +122,7 @@ class Core(BaseAsyncComponent):
             )
             self.fuse_manager = FuseManager(self.config.addr)
             self.synchronizer = Synchronizer(self.config.auto_sync, self.fs)
+            self.remote_listener = RemoteListener(device, self.backend_connection, self.backend_events_manager)
             self.sharing = Sharing(
                 device, self.fs, self.backend_connection, self.backend_events_manager
             )

@@ -191,8 +191,7 @@ def rule_selector():
 
                 async with run_app(backend) as backend_connection_factory:
 
-                    tcp_stream_spy.install_hook(backend_addr, backend_connection_factory)
-                    try:
+                    with tcp_stream_spy.install_hook(backend_addr, backend_connection_factory):
 
                         on_ready = bootstrap_core
                         while True:
@@ -204,9 +203,6 @@ def rule_selector():
                                     alice.local_storage_db_path += "-reset"
                                 else:
                                     on_ready = restart_core_done
-
-                    finally:
-                        tcp_stream_spy.install_hook(backend_addr, None)
 
         @rule(
             size=st.integers(min_value=0, max_value=PLAYGROUND_SIZE),

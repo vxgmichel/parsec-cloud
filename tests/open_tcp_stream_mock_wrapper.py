@@ -14,11 +14,13 @@ class OpenTCPStreamMockWrapper:
         self._hooks = {}
         self._offlines = set()
 
+    @contextmanager
     def install_hook(self, addr, hook):
-        if not hook:
-            self._hooks.pop(addr, None)
-        else:
-            self._hooks[addr] = hook
+        self._hooks[addr] = hook
+        try:
+            yield
+        finally:
+            self._hooks.pop(addr)
 
     async def __call__(self, host, port, **kwargs):
         addr = "tcp://%s:%s" % (host, port)

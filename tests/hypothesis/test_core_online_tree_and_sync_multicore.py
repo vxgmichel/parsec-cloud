@@ -85,9 +85,7 @@ async def test_reproduce(running_backend, core, alice_core_sock, core2, alice2_c
                 )
 
                 async with run_app(backend) as backend_connection_factory:
-                    tcp_stream_spy.install_hook(backend_addr, backend_connection_factory)
-
-                    try:
+                    with tcp_stream_spy.install_hook(backend_addr, backend_connection_factory):
                         async with core_factory(**core_config) as self.core_1, core_factory(
                             **core_config
                         ) as self.core_2:
@@ -107,9 +105,6 @@ async def test_reproduce(running_backend, core, alice_core_sock, core2, alice2_c
                                     await sockets[core].send(msg)
                                     rep = await sockets[core].recv()
                                     await self.communicator.trio_respond(rep)
-
-                    finally:
-                        tcp_stream_spy.install_hook(backend_addr, None)
 
         @rule_once(target=Folders)
         def get_root(self):

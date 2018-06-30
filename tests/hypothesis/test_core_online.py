@@ -31,8 +31,7 @@ async def test_online(TrioDriverRuleBasedStateMachine, tcp_stream_spy, backend_a
 
                 async with run_app(backend) as backend_connection_factory:
 
-                    tcp_stream_spy.install_hook(backend_addr, backend_connection_factory)
-                    try:
+                    with tcp_stream_spy.install_hook(backend_addr, backend_connection_factory):
                         async with core_factory(**core_config) as core:
                             await core.login(alice)
                             async with connect_core(core) as sock:
@@ -44,9 +43,6 @@ async def test_online(TrioDriverRuleBasedStateMachine, tcp_stream_spy, backend_a
                                     await sock.send(msg)
                                     rep = await sock.recv()
                                     await self.communicator.trio_respond(rep)
-
-                    finally:
-                        tcp_stream_spy.install_hook(backend_addr, None)
 
         @rule()
         def get_core_state(self):

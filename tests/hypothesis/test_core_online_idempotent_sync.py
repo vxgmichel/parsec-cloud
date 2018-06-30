@@ -55,9 +55,7 @@ async def test_online_core_idempotent_sync(
                 )
 
                 async with run_app(backend) as backend_connection_factory:
-                    tcp_stream_spy.install_hook(backend_addr, backend_connection_factory)
-
-                    try:
+                    with tcp_stream_spy.install_hook(backend_addr, backend_connection_factory):
                         async with core_factory(**core_config) as self.core:
 
                             await self.core.login(alice)
@@ -75,9 +73,6 @@ async def test_online_core_idempotent_sync(
                                     await sock.send(msg)
                                     rep = await sock.recv()
                                     await self.communicator.trio_respond(rep)
-
-                    finally:
-                        tcp_stream_spy.install_hook(backend_addr, None)
 
         @rule_once(target=BadPath)
         def init_bad_path(self):

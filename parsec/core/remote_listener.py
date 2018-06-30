@@ -22,7 +22,9 @@ class RemoteListener(BaseAsyncComponent):
         self._notify_sink_updated_task_info = None
 
     async def _init(self, nursery):
-        get_signal("fs_local_notify_sink_loaded").connect(self._on_fs_local_notify_sink_loaded, weak=True)
+        get_signal("fs_local_notify_sink_loaded").connect(
+            self._on_fs_local_notify_sink_loaded, weak=True
+        )
         self._new_notify_sink_task_info = await nursery.start(self._new_notify_sink_task)
         self._notify_sink_updated_task_info = await nursery.start(self._notify_sink_updated_task)
 
@@ -48,7 +50,9 @@ class RemoteListener(BaseAsyncComponent):
                 task_status.started((cancel_scope, closed_event))
                 while True:
                     new_notify_sink = await self._new_notify_sinks.get()
-                    await self._backend_events_manager.subscribe_backend_event('vlob_updated', new_notify_sink)
+                    await self._backend_events_manager.subscribe_backend_event(
+                        "vlob_updated", new_notify_sink
+                    )
         finally:
             closed_event.set()
 
@@ -59,14 +63,16 @@ class RemoteListener(BaseAsyncComponent):
                 task_status.started((cancel_scope, closed_event))
                 while True:
                     notify_sink = await self._notify_sink_updated.get()
-                    rep = await self._backend_connection.send({"cmd": "vlob_get", "id": notify_sink, "trust_seed": notify_sink})
-                    if rep['status'] != 'ok':
+                    rep = await self._backend_connection.send(
+                        {"cmd": "vlob_get", "id": notify_sink, "trust_seed": notify_sink}
+                    )
+                    if rep["status"] != "ok":
                         # TODO
                         raise BackendError()
-                    data = json.loads(rep['blob'].decode('utf-8'))
-                    if data['author'] != self._device.device_id:
+                    data = json.loads(rep["blob"].decode("utf-8"))
+                    if data["author"] != self._device.device_id:
                         # TODO: we should only re-sync what's needed
-                        get_signal("fs_entry_updated").send(self, '/')
+                        get_signal("fs_entry_updated").send(self, "/")
 
         finally:
             closed_event.set()

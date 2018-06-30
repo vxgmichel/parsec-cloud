@@ -22,9 +22,9 @@ class NotInLocalTreeError(Exception):
 
 class ManifestCache(dict):
     def __setattr__(self, key, value):
-        sharing = value.get('sharing')
+        sharing = value.get("sharing")
         if sharing:
-            get_signal("fs_local_notify_sink_loaded").send(self, sharing['notify_sink'])
+            get_signal("fs_local_notify_sink_loaded").send(self, sharing["notify_sink"])
         super().__setattr__(key, value)
 
 

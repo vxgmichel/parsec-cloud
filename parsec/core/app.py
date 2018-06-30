@@ -122,7 +122,9 @@ class Core(BaseAsyncComponent):
             )
             self.fuse_manager = FuseManager(self.config.addr)
             self.synchronizer = Synchronizer(self.config.auto_sync, self.fs)
-            self.remote_listener = RemoteListener(device, self.backend_connection, self.backend_events_manager)
+            self.remote_listener = RemoteListener(
+                device, self.backend_connection, self.backend_events_manager
+            )
             self.sharing = Sharing(
                 device, self.fs, self.backend_connection, self.backend_events_manager
             )

@@ -3,11 +3,30 @@ import pendulum
 from unittest.mock import Mock
 from inspect import iscoroutinefunction
 from async_generator import asynccontextmanager
+from copy import deepcopy
 
 from parsec.core import Core, CoreConfig
+from parsec.core.local_db import LocalDB, LocalDBMissingEntry
 from parsec.handshake import ClientHandshake, AnonymousClientHandshake
 from parsec.networking import CookedSocket
 from parsec.backend import BackendApp, BackendConfig
+
+
+class InMemoryLocalDB(LocalDB):
+    def __init__(self):
+        self._data = {}
+
+    def get(self, access):
+        try:
+            return deepcopy(self._data[access["id"]])
+        except KeyError:
+            raise LocalDBMissingEntry(access)
+
+    def set(self, access, manifest):
+        self._data[access["id"]] = manifest
+
+    def clear(self, access):
+        del self._data[access["id"]]
 
 
 def freeze_time(timestr):

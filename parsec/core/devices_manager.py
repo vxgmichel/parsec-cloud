@@ -1,6 +1,7 @@
 import os
 import re
 import logging
+import json
 import attr
 from nacl.public import PrivateKey
 from nacl.signing import SigningKey
@@ -9,6 +10,7 @@ from nacl.secret import SecretBox
 import nacl.utils
 
 from parsec.schema import UnknownCheckedSchema, fields, validate
+from parsec.core.local_db import LocalDB
 
 
 logger = logging.getLogger("parsec")
@@ -68,27 +70,18 @@ def _generate_salt():
     return nacl.utils.random(argon2i.SALTBYTES)
 
 
-@attr.s(init=False, slots=True)
 class Device:
-    id = attr.ib()
-    user_privkey = attr.ib()
-    device_signkey = attr.ib()
-    local_storage_db_path = attr.ib()
+    def __repr__(self):
+        return f"<{type(self).__name__}(id={self.id!r}, local_db={self.local_db!r})>"
 
-    def __init__(self, id, user_privkey, device_signkey, local_storage_db_path):
+    def __init__(self, id, user_privkey, device_signkey, user_manifest_access, local_db):
         assert is_valid_device_id(id)
         self.id = id
-        self.local_storage_db_path = local_storage_db_path
+        self.user_id, self.device_name = id.split("@")
         self.user_privkey = PrivateKey(user_privkey)
         self.device_signkey = SigningKey(device_signkey)
-
-    @property
-    def user_id(self):
-        return self.id.split("@")[0]
-
-    @property
-    def device_name(self):
-        return self.id.split("@")[1]
+        self.user_manifest_access = user_manifest_access
+        self.local_db = local_db
 
     @property
     def user_pubkey(self):
@@ -148,6 +141,7 @@ class DevicesManager:
             pass
 
     def register_new_device(self, device_id, user_privkey, device_signkey, password=None):
+        # TODO: add user_manifest_access
         self._ensure_devices_conf_path_exists()
         device_conf_path = os.path.join(self.devices_conf_path, device_id)
         if os.path.exists(device_conf_path):
@@ -201,6 +195,7 @@ class DevicesManager:
             try:
                 user_privkey = box.decrypt(device_conf["user_privkey"])
                 device_signkey = box.decrypt(device_conf["device_signkey"])
+                user_manifest_access = json.loads(box.decrypt(device_conf["user_manifest_access"]))
             except nacl.exceptions.CryptoError as exc:
                 raise DeviceLoadingError(
                     "Invalid %s device config: decryption key failure" % device_conf_path
@@ -215,10 +210,12 @@ class DevicesManager:
 
             user_privkey = device_conf["user_privkey"]
             device_signkey = device_conf["device_signkey"]
+            user_manifest_access = device_conf["user_manifest_access"]
 
         return Device(
             id=device_id,
             user_privkey=user_privkey,
             device_signkey=device_signkey,
-            local_storage_db_path=local_storage_db_path,
+            local_db=LocalDB(local_storage_db_path),
+            user_manifest_access=user_manifest_access,
         )

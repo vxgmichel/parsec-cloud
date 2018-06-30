@@ -11,7 +11,7 @@ from parsec.core.fs import FS
 from parsec.core.synchronizer import Synchronizer
 from parsec.core.remote_listener import RemoteListener
 from parsec.core.devices_manager import DevicesManager
-from parsec.core.backend_connections_multiplexer import BackendConnectionsMultiplexer
+from parsec.core.backend_cmds_sender import BackendCmdsSender
 from parsec.core.backend_events_manager import BackendEventsManager
 from parsec.core.fuse_manager import FuseManager
 from parsec.core.local_storage import LocalStorage
@@ -66,16 +66,16 @@ class Core(BaseAsyncComponent):
         self.components_dep_order = (
             "backend_events_manager",
             "backend_connection",
-            "backend_storage",
-            "local_storage",
-            "encryption_manager",
-            "manifests_manager",
-            "blocks_manager",
+            # "backend_storage",
+            # "local_storage",
+            # "encryption_manager",
+            # "manifests_manager",
+            # "blocks_manager",
             "fs",
-            "fuse_manager",
-            "synchronizer",
-            "remote_listener",
-            "sharing",
+            # "fuse_manager",
+            # "synchronizer",
+            # "remote_listener",
+            # "sharing",
         )
         for cname in self.components_dep_order:
             setattr(self, cname, None)
@@ -105,29 +105,25 @@ class Core(BaseAsyncComponent):
 
             # First create components
             self.backend_events_manager = BackendEventsManager(device, self.config.backend_addr)
-            self.backend_connection = BackendConnectionsMultiplexer(
-                device, self.config.backend_addr
-            )
-            self.local_storage = LocalStorage(device.local_storage_db_path)
-            self.encryption_manager = EncryptionManager(
-                device, self.backend_connection, self.local_storage
-            )
-            self.backend_storage = BackendStorage(self.backend_connection)
-            self.manifests_manager = ManifestsManager(
-                self.local_storage, self.backend_storage, self.encryption_manager
-            )
-            self.blocks_manager = BlocksManager(self.local_storage, self.backend_storage)
-            self.fs = FS(
-                device, self.manifests_manager, self.blocks_manager, self.config.block_size
-            )
-            self.fuse_manager = FuseManager(self.config.addr)
-            self.synchronizer = Synchronizer(self.config.auto_sync, self.fs)
-            self.remote_listener = RemoteListener(
-                device, self.backend_connection, self.backend_events_manager
-            )
-            self.sharing = Sharing(
-                device, self.fs, self.backend_connection, self.backend_events_manager
-            )
+            self.backend_connection = BackendCmdsSender(device, self.config.backend_addr)
+            # self.local_storage = LocalStorage(device.local_storage_db_path)
+            # self.encryption_manager = EncryptionManager(
+            #     device, self.backend_connection, self.local_storage
+            # )
+            # self.backend_storage = BackendStorage(self.backend_connection)
+            # self.manifests_manager = ManifestsManager(
+            #     self.local_storage, self.backend_storage, self.encryption_manager
+            # )
+            # self.blocks_manager = BlocksManager(self.local_storage, self.backend_storage)
+            self.fs = FS(device, self.backend_connection)
+            # self.fuse_manager = FuseManager(self.config.addr)
+            # self.synchronizer = Synchronizer(self.config.auto_sync, self.fs)
+            # self.remote_listener = RemoteListener(
+            #     device, self.backend_connection, self.backend_events_manager
+            # )
+            # self.sharing = Sharing(
+            #     device, self.fs, self.backend_connection, self.backend_events_manager
+            # )
 
             # Then initialize them, order must respect dependencies here !
             try:

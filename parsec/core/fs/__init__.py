@@ -1,13 +1,119 @@
-from parsec.core.fs.base import FSBase
-from parsec.core.fs.ops import FSOpsMixin
-from parsec.core.fs.sync import FSSyncMixin
-from parsec.core.fs.sync_file import FSSyncFileMixin
-from parsec.core.fs.sync_folder import FSSyncFolderMixin
-from parsec.core.fs.utils import FSInvalidPath
+import inspect
+
+# from parsec.beacon_monitor import BeaconMonitor
+# from parsec.sync_monitor import SyncMonitor
+from parsec.core.fs.local_fs import (
+    LocalManifestFS,
+    LocalFileFS,
+    LocalFileFSMissingBlockEntries,
+    FSInvalidPath,
+)
+from parsec.core.local_db import LocalDBMissingEntry
+
+# from parsec.core.fs.syncer import Syncer
+# from parsec.core.fs.remote_loader import RemoteLoader
 
 
-class FS(FSOpsMixin, FSSyncMixin, FSSyncFolderMixin, FSSyncFileMixin, FSBase):
-    pass
+class FS:
+    def __init__(self, device, backend_conn):
+        self._device = device
 
+        self._local_file_fs = LocalFileFS(device.local_db)
+        self._local_manifest_fs = LocalManifestFS(
+            device.id, device.user_manifest_access, device.local_db
+        )
+        # self._remote_loader = RemoteLoader(backend_conn, device.local_db)
+        # self._syncer = Syncer(device, backend_conn, self._local_manifest_fs)
 
-__all__ = ("FSInvalidPath", "FS")
+        # self._beacon_monitor = BeaconMonitor(device, device.local_db)
+        # self._sync_monitor = SyncMonitor(self._local_manifest_fs, self._syncer)
+
+    async def init(self, nursery):
+        pass
+        # await self._beacon_monitor.init(nursery)
+        # await self._sync_monitor.init(nursery)
+
+    async def teardown(self):
+        pass
+        # await self._sync_monitor.teardown()
+        # await self._beacon_monitor.teardown()
+
+    async def _load_and_retry(self, fn, *args, **kwargs):
+        while True:
+            try:
+                if inspect.iscoroutinefunction(fn):
+                    return await fn(*args, **kwargs)
+                else:
+                    return fn(*args, **kwargs)
+
+            except LocalDBMissingEntry as exc:
+                await self._remote_loader.load_manifest(exc.access)
+
+            except LocalFileFSMissingBlockEntries as exc:
+                for access in exc.accesses:
+                    await self._remote_loader.load_block(access)
+
+    async def stat(self, path):
+        return await self._load_and_retry(self._local_manifest_fs.stat, path)
+
+    async def file_write(self, path, content, offset=0):
+        fd = await self.file_fd_open(path)
+        try:
+            if offset:
+                await self.file_fd_seek(fd, offset)
+            await self.file_fd_write(fd, content)
+        finally:
+            await self.file_fd_close(fd)
+
+    async def file_read(self, path, size=-1, offset=0):
+        fd = await self.file_fd_open(path)
+        try:
+            if offset:
+                await self.file_fd_seek(fd, offset)
+            return await self.file_fd_read(fd, size)
+        finally:
+            await self.file_fd_close(fd)
+
+    async def file_fd_open(self, path):
+        access = await self._load_and_retry(self._local_manifest_fs.get_access, path)
+        return self._local_file_fs.open(access)
+
+    async def file_fd_close(self, fd):
+        self._local_file_fs.close(fd)
+
+    async def file_fd_seek(self, fd, offset):
+        self._local_file_fs.seek(fd, offset)
+
+    async def file_fd_write(self, fd, content):
+        self._local_file_fs.write(fd, content)
+
+    async def file_fd_flush(self, fd):
+        self._local_file_fs.flush(fd)
+
+    async def file_fd_read(self, fd, size=-1):
+        return await self._load_and_retry(self._local_file_fs.read, fd, size)
+
+    async def file_create(self, path):
+        await self._load_and_retry(self._local_manifest_fs.file_create, path)
+
+    async def folder_create(self, path):
+        await self._load_and_retry(self._local_manifest_fs.folder_create, path)
+
+    async def move(self, src, dst):
+        await self._load_and_retry(self._local_manifest_fs.move, src, dst)
+
+    async def delete(self, path):
+        await self._load_and_retry(self._local_manifest_fs.delete, path)
+
+    # async def sync(self, path, recursive=True):
+    #     print(id(self), "sync", path)
+    #     sync_path, sync_recursive = self._local_manifest_fs.get_sync_strategy(
+    #         path, recursive
+    #     )
+    #     access = await self._load_and_retry(
+    #         self._local_manifest_fs.get_access, sync_path
+    #     )
+    #     notify = self._local_manifest_fs.get_beacons(sync_path)
+    #     await self._load_and_retry(
+    #         self._syncer.sync, access, recursive=sync_recursive, notify=notify
+    #     )

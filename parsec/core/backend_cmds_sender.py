@@ -9,7 +9,7 @@ from parsec.core.devices_manager import Device
 logger = logbook.Logger("parsec.core.backend_connections_multiplexer")
 
 
-class BackendConnectionsMultiplexer(BaseAsyncComponent):
+class BackendCmdsSender(BaseAsyncComponent):
     def __init__(self, device: Device, backend_addr: str):
         super().__init__()
         self.device = device

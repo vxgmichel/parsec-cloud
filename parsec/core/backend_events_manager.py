@@ -6,7 +6,11 @@ from parsec.signals import get_signal
 from parsec.schema import UnknownCheckedSchema, fields
 from parsec.core.base import BaseAsyncComponent
 from parsec.core.devices_manager import Device
-from parsec.core import backend_connection as bc
+from parsec.core.backend_connection import (
+    backend_connection_factory,
+    HandshakeError,
+    BackendNotAvailable,
+)
 
 
 logger = logbook.Logger("parsec.core.backend_events_manager")
@@ -119,10 +123,10 @@ class BackendEventsManager(BaseAsyncComponent):
 
                 while True:
                     try:
-                        sock = await bc.backend_connection_factory(self.backend_addr, self.device)
+                        sock = await backend_connection_factory(self.backend_addr, self.device)
                         await _event_pump(sock)
                     except (
-                        bc.BackendNotAvailable,
+                        BackendNotAvailable,
                         trio.BrokenStreamError,
                         trio.ClosedStreamError,
                     ) as exc:
@@ -140,7 +144,7 @@ class BackendEventsManager(BaseAsyncComponent):
                             "Invalid response sent by backend, restarting connection..."
                         )
                         await trio.sleep(1)
-                    except bc.HandshakeError as exc:
+                    except HandshakeError as exc:
                         # Handshake error means there is no need retrying the connection
                         # Only thing we can do is sending a signal to notify the
                         # trouble...

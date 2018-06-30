@@ -2,7 +2,7 @@ import pytest
 
 from parsec.core.local_storage import LocalStorage
 from parsec.core.backend_storage import BackendStorage
-from parsec.core.backend_connections_multiplexer import BackendConnectionsMultiplexer
+from parsec.core.backend_cmds_sender import BackendCmdsSender
 from parsec.core.encryption_manager import EncryptionManager
 from parsec.core.manifests_manager import ManifestsManager
 from parsec.core.blocks_manager import BlocksManager
@@ -11,7 +11,7 @@ from parsec.core.fs import FS
 
 @pytest.fixture
 async def backend_connections_multiplexer(nursery, alice, running_backend):
-    bcm = BackendConnectionsMultiplexer(alice, running_backend.addr)
+    bcm = BackendCmdsSender(alice, running_backend.addr)
     await bcm.init(nursery)
     return bcm
 

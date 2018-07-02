@@ -7,7 +7,7 @@ from hypothesis.stateful import Bundle
 from tests.common import connect_core, core_factory
 from tests.hypothesis.common import OracleFS, rule_once, rule
 
-from tests.common import InMemoryLocalDB
+from tests.common import bootstrap_device
 
 
 # The point is not to find breaking filenames here, so keep it simple
@@ -16,23 +16,19 @@ st_entry_name = st.text(alphabet=ascii_lowercase, min_size=1, max_size=3)
 
 @pytest.mark.slow
 @pytest.mark.trio
-async def test_offline_core_tree(TrioDriverRuleBasedStateMachine, backend_addr, tmpdir, alice):
+async def test_offline_core_tree(TrioDriverRuleBasedStateMachine, backend_addr, tmpdir):
     class CoreOfflineRWFile(TrioDriverRuleBasedStateMachine):
         Files = Bundle("file")
         Folders = Bundle("folder")
-        count = 0
 
         async def trio_runner(self, task_status):
             self.oracle_fs = OracleFS()
 
-            type(self).count += 1
-            workdir = tmpdir.mkdir("try-%s" % self.count)
-
-            config = {"base_settings_path": workdir.strpath, "backend_addr": backend_addr}
-            alice.local_db = InMemoryLocalDB(str(workdir / "alice-local_storage"))
+            config = {"base_settings_path": tmpdir.strpath, "backend_addr": backend_addr}
+            device = bootstrap_device("alice", "dev1")
 
             async with core_factory(**config) as core:
-                await core.login(alice)
+                await core.login(device)
                 async with connect_core(core) as sock:
 
                     self.core_cmd = self.communicator.send

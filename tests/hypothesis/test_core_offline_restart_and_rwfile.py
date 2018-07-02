@@ -4,31 +4,17 @@ from hypothesis import strategies as st, note
 from parsec.utils import to_jsonb64, from_jsonb64
 
 from tests.common import connect_core, core_factory, bootstrap_device
-from tests.hypothesis.common import rule, failure_reproducer, reproduce_rule
+from tests.hypothesis.common import rule, failure_reproducer, reproduce_rule, FileOracle
 
 
 BLOCK_SIZE = 16
 PLAYGROUND_SIZE = BLOCK_SIZE * 10
 
 
-class FileOracle:
-    def __init__(self):
-        self._buffer = bytearray()
-
-    def read(self, size, offset):
-        return self._buffer[offset : size + offset]
-
-    def write(self, offset, content):
-        self._buffer[offset : len(content) + offset] = content
-
-    def truncate(self, length):
-        self._buffer = self._buffer[:length]
-
-
 @pytest.mark.slow
 @pytest.mark.trio
 async def test_core_offline_restart_and_rwfile(
-    TrioDriverRuleBasedStateMachine, backend_addr, tmpdir, alice
+    TrioDriverRuleBasedStateMachine, backend_addr, tmpdir
 ):
     class RestartCore(Exception):
         pass
@@ -41,7 +27,7 @@ import os
 from parsec.utils import to_jsonb64, from_jsonb64
 
 from tests.common import connect_core, core_factory
-from tests.hypothesis.test_core_offline_restart_and_rwfile import FileOracle, BLOCK_SIZE
+from tests.hypothesis.test_core_offline_restart_and_rwfile import FileOracle, BLOCK_SIZE,
 
 class RestartCore(Exception):
     pass
@@ -83,18 +69,13 @@ def rule_selector():
 """
     )
     class CoreOfflineRestartAndRWFile(TrioDriverRuleBasedStateMachine):
-        count = 0
-
         async def trio_runner(self, task_status):
-            type(self).count += 1
-            workdir = tmpdir.mkdir("try-%s" % self.count)
-
             config = {
-                "base_settings_path": workdir.strpath,
+                "base_settings_path": tmpdir.strpath,
                 "backend_addr": backend_addr,
                 "block_size": BLOCK_SIZE,
             }
-            alice = bootstrap_device("alice", "dev1")
+            device = bootstrap_device("alice", "dev1")
 
             self.sys_cmd = lambda x: self.communicator.send(("sys", x))
             self.core_cmd = lambda x: self.communicator.send(("core", x))
@@ -103,7 +84,7 @@ def rule_selector():
             async def run_core(on_ready):
                 async with core_factory(**config) as core:
 
-                    await core.login(alice)
+                    await core.login(device)
                     async with connect_core(core) as sock:
 
                         await on_ready(sock)
@@ -160,7 +141,7 @@ async def afunc(sock, file_oracle):
 yield afunc
 """
         )
-        def read(self, size, offset):
+        def atomic_read(self, size, offset):
             rep = self.core_cmd(
                 {"cmd": "file_read", "path": "/foo.txt", "offset": offset, "size": size}
             )
@@ -168,21 +149,6 @@ yield afunc
             assert rep["status"] == "ok"
             expected_content = self.file_oracle.read(size, offset)
             assert from_jsonb64(rep["content"]) == expected_content
-
-        @rule()
-        @reproduce_rule(
-            """
-async def afunc(sock, file_oracle):
-    await sock.send({{"cmd": "flush", "path": "/foo.txt"}})
-    rep = await sock.recv()
-    assert rep["status"] == "ok"
-yield afunc
-"""
-        )
-        def flush(self):
-            rep = self.core_cmd({"cmd": "flush", "path": "/foo.txt"})
-            note(rep)
-            assert rep["status"] == "ok"
 
         @rule(
             offset=st.integers(min_value=0, max_value=PLAYGROUND_SIZE),
@@ -199,7 +165,7 @@ async def afunc(sock, file_oracle):
 yield afunc
 """
         )
-        def write(self, offset, content):
+        def atomic_write(self, offset, content):
             b64content = to_jsonb64(content)
             rep = self.core_cmd(
                 {"cmd": "file_write", "path": "/foo.txt", "offset": offset, "content": b64content}
@@ -219,7 +185,7 @@ async def afunc(sock, file_oracle):
 yield afunc
 """
         )
-        def truncate(self, length):
+        def atomic_truncate(self, length):
             rep = self.core_cmd({"cmd": "file_truncate", "path": "/foo.txt", "length": length})
             note(rep)
             assert rep["status"] == "ok"

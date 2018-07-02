@@ -137,11 +137,11 @@ def test_flush_file(local_file_fs, foo_txt):
 
 def test_block_not_loaded_entry(alice, local_file_fs, foo_txt):
     foo_manifest = alice.local_db.get(foo_txt.access)
-    block1_access = {**new_access(), 'offset': 0, 'size': 10}
-    block2_access = {**new_access(), 'offset': 10, 'size': 5}
-    foo_manifest['blocks'].append(block1_access)
-    foo_manifest['blocks'].append(block2_access)
-    foo_manifest['size'] = 15
+    block1_access = {**new_access(), "offset": 0, "size": 10}
+    block2_access = {**new_access(), "offset": 10, "size": 5}
+    foo_manifest["blocks"].append(block1_access)
+    foo_manifest["blocks"].append(block2_access)
+    foo_manifest["size"] = 15
     alice.local_db.set(foo_txt.access, foo_manifest)
 
     fd = local_file_fs.open(foo_txt.access)
@@ -149,12 +149,11 @@ def test_block_not_loaded_entry(alice, local_file_fs, foo_txt):
         local_file_fs.read(fd, 14)
     assert exc.value.accesses == [block1_access, block2_access]
 
-    alice.local_db.set(block1_access, b'a' * 10)
-    alice.local_db.set(block2_access, b'b' * 5)
+    alice.local_db.set(block1_access, b"a" * 10)
+    alice.local_db.set(block2_access, b"b" * 5)
 
     data = local_file_fs.read(fd, 14)
-    assert data == b'a' * 10 + b'b' * 4
-
+    assert data == b"a" * 10 + b"b" * 4
 
 
 @pytest.mark.slow

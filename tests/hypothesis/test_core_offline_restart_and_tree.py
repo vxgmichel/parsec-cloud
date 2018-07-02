@@ -4,7 +4,7 @@ from string import ascii_lowercase
 from hypothesis import strategies as st, note
 from hypothesis.stateful import Bundle
 
-from tests.common import connect_core, core_factory
+from tests.common import bootstrap_device, connect_core, core_factory
 from tests.hypothesis.common import OracleFS, rule, rule_once
 
 
@@ -14,23 +14,17 @@ st_entry_name = st.text(alphabet=ascii_lowercase, min_size=1, max_size=3)
 
 @pytest.mark.slow
 @pytest.mark.trio
-async def test_core_offline_restart_and_tree(
-    TrioDriverRuleBasedStateMachine, backend_addr, tmpdir, alice
-):
+async def test_core_offline_restart_and_tree(TrioDriverRuleBasedStateMachine, backend_addr, tmpdir):
     class RestartCore(Exception):
         pass
 
     class CoreOfflineRestartAndTree(TrioDriverRuleBasedStateMachine):
         Files = Bundle("file")
         Folders = Bundle("folder")
-        count = 0
 
         async def trio_runner(self, task_status):
-            type(self).count += 1
-            workdir = tmpdir.mkdir("try-%s" % self.count)
-
-            config = {"base_settings_path": workdir.strpath, "backend_addr": backend_addr}
-            alice.local_storage_db_path = str(workdir / "alice-local_storage")
+            config = {"base_settings_path": tmpdir.strpath, "backend_addr": backend_addr}
+            device = bootstrap_device("alice", "dev1")
 
             self.sys_cmd = lambda x: self.communicator.send(("sys", x))
             self.core_cmd = lambda x: self.communicator.send(("core", x))
@@ -40,7 +34,7 @@ async def test_core_offline_restart_and_tree(
                 async with core_factory(**config) as core:
                     self.core = core
 
-                    await core.login(alice)
+                    await core.login(device)
                     async with connect_core(core) as sock:
 
                         await on_ready(sock)
@@ -125,14 +119,5 @@ async def test_core_offline_restart_and_tree(
         def restart(self):
             rep = self.sys_cmd("restart!")
             assert rep is True
-
-        @rule(path=st.one_of(Folders, Files))
-        def flush(self, path):
-            # Note that fs api should automatically do the flush when creating
-            # files/folders. So manual flush such as here has no effect.
-            rep = self.core_cmd({"cmd": "flush", "path": path})
-            note(rep)
-            expected_status = self.oracle_fs.flush(path)
-            assert rep["status"] == expected_status
 
     await CoreOfflineRestartAndTree.run_test()

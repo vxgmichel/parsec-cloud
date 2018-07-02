@@ -101,10 +101,10 @@ class FS:
         return await self._load_and_retry(self._local_file_fs.read, fd, size)
 
     async def file_create(self, path):
-        await self._load_and_retry(self._local_folder_fs.file_create, path)
+        await self._load_and_retry(self._local_folder_fs.touch, path)
 
     async def folder_create(self, path):
-        await self._load_and_retry(self._local_folder_fs.folder_create, path)
+        await self._load_and_retry(self._local_folder_fs.mkdir, path)
 
     async def move(self, src, dst):
         await self._load_and_retry(self._local_folder_fs.move, src, dst)

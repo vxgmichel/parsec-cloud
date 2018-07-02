@@ -4,51 +4,31 @@ from hypothesis.stateful import rule
 
 from parsec.utils import to_jsonb64, from_jsonb64
 
-from tests.common import connect_core, core_factory
+from tests.common import bootstrap_device, connect_core, core_factory, FileOracle
 
 
 BLOCK_SIZE = 16
 PLAYGROUND_SIZE = BLOCK_SIZE * 10
 
 
-class FileOracle:
-    def __init__(self):
-        self._buffer = bytearray()
-
-    def read(self, size, offset):
-        return self._buffer[offset : size + offset]
-
-    def write(self, offset, content):
-        self._buffer[offset : len(content) + offset] = content
-
-    def truncate(self, length):
-        self._buffer = self._buffer[:length]
-
-
 @pytest.mark.slow
 @pytest.mark.trio
-async def test_core_offline_rwfile(TrioDriverRuleBasedStateMachine, backend_addr, tmpdir, alice):
+async def test_core_offline_rwfile(TrioDriverRuleBasedStateMachine, backend_addr, tmpdir):
     class CoreOfflineRWFile(TrioDriverRuleBasedStateMachine):
-        count = 0
-
         async def trio_runner(self, task_status):
-            type(self).count += 1
-            workdir = tmpdir.mkdir("try-%s" % self.count)
 
             config = {
-                "base_settings_path": workdir.strpath,
+                "base_settings_path": tmpdir.strpath,
                 "backend_addr": backend_addr,
                 "block_size": BLOCK_SIZE,
             }
-            alice.local_storage_db_path = str(workdir / "alice-local_storage")
+            device = bootstrap_device("alice", "dev1")
 
             async with core_factory(**config) as core:
-                await core.login(alice)
+                await core.login(device)
                 async with connect_core(core) as sock:
 
-                    await sock.send({"cmd": "file_create", "path": "/foo.txt"})
-                    rep = await sock.recv()
-                    assert rep == {"status": "ok"}
+                    await core.fs.file_create("/foo.txt")
                     self.file_oracle = FileOracle()
 
                     self.core_cmd = self.communicator.send
@@ -64,7 +44,7 @@ async def test_core_offline_rwfile(TrioDriverRuleBasedStateMachine, backend_addr
             size=st.integers(min_value=0, max_value=PLAYGROUND_SIZE),
             offset=st.integers(min_value=0, max_value=PLAYGROUND_SIZE),
         )
-        def read(self, size, offset):
+        def atomic_read(self, size, offset):
             rep = self.core_cmd(
                 {"cmd": "file_read", "path": "/foo.txt", "offset": offset, "size": size}
             )
@@ -73,17 +53,11 @@ async def test_core_offline_rwfile(TrioDriverRuleBasedStateMachine, backend_addr
             expected_content = self.file_oracle.read(size, offset)
             assert from_jsonb64(rep["content"]) == expected_content
 
-        @rule()
-        def flush(self):
-            rep = self.core_cmd({"cmd": "flush", "path": "/foo.txt"})
-            note(rep)
-            assert rep["status"] == "ok"
-
         @rule(
             offset=st.integers(min_value=0, max_value=PLAYGROUND_SIZE),
             content=st.binary(max_size=PLAYGROUND_SIZE),
         )
-        def write(self, offset, content):
+        def atomic_write(self, offset, content):
             b64content = to_jsonb64(content)
             rep = self.core_cmd(
                 {"cmd": "file_write", "path": "/foo.txt", "offset": offset, "content": b64content}
@@ -93,7 +67,7 @@ async def test_core_offline_rwfile(TrioDriverRuleBasedStateMachine, backend_addr
             self.file_oracle.write(offset, content)
 
         @rule(length=st.integers(min_value=0, max_value=PLAYGROUND_SIZE))
-        def truncate(self, length):
+        def atomic_truncate(self, length):
             rep = self.core_cmd({"cmd": "file_truncate", "path": "/foo.txt", "length": length})
             note(rep)
             assert rep["status"] == "ok"

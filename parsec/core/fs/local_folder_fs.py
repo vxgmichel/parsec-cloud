@@ -243,6 +243,10 @@ class LocalFolderFS:
     def move(self, src, dst):
         src = normalize_path(src)
         dst = normalize_path(dst)
+
+        if src == dst:
+            return
+
         parent_src, child_src = src.rsplit("/", 1)
         parent_dst, child_dst = dst.rsplit("/", 1)
         parent_src = parent_src or "/"

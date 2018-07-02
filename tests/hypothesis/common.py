@@ -47,6 +47,28 @@ def rule_once(*args, **kwargs):
     return accept
 
 
+class FileOracle:
+    def __init__(self):
+        self._buffer = bytearray()
+
+    def read(self, size, offset):
+        return self._buffer[offset : size + offset]
+
+    def write(self, offset, content):
+        if not content:
+            return
+        gap = offset - len(self._buffer)
+        if gap > 0:
+            self._buffer += bytearray(gap)
+        self._buffer[offset : len(content) + offset] = content
+
+    def truncate(self, length):
+        new_buffer = bytearray(length)
+        copy_size = min(length, len(self._buffer))
+        new_buffer[:copy_size] = self._buffer[:copy_size]
+        self._buffer = new_buffer
+
+
 @attr.s
 class OracleFSFile:
     need_sync = attr.ib(default=True)
@@ -126,6 +148,10 @@ class OracleFS:
         parent_path, name = path.rsplit("/", 1)
         parent_dir = self.get_path(parent_path or "/")
         if isinstance(parent_dir, OracleFSFolder) and name in parent_dir:
+            item = parent_dir[name]
+            if isinstance(item, OracleFSFolder) and len(item):
+                return "invalid_path"
+
             del parent_dir[name]
             parent_dir.need_sync = True
             return "ok"
@@ -137,10 +163,13 @@ class OracleFS:
         src = normalize_path(src)
         dst = normalize_path(dst)
 
+        if src == dst:
+            return "ok"
+
         if src == "/" or dst == "/":
             return "invalid_path"
 
-        if src == dst or dst.startswith(src + "/"):
+        if dst.startswith(src + "/"):
             return "invalid_path"
 
         parent_src, name_src = src.rsplit("/", 1)
@@ -152,7 +181,12 @@ class OracleFS:
         if parent_dir_src is None or name_src not in parent_dir_src:
             return "invalid_path"
 
-        if parent_dir_dst is None or name_dst in parent_dir_dst:
+        if parent_dir_dst is None:
+            return "invalid_path"
+
+        dst_as_folder = self.get_folder(dst)
+        if dst_as_folder is not None and dst_as_folder:
+            # Not empty folder
             return "invalid_path"
 
         parent_dir_dst[name_dst] = parent_dir_src.pop(name_src)

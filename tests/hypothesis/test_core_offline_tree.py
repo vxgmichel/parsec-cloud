@@ -7,6 +7,8 @@ from hypothesis.stateful import Bundle
 from tests.common import connect_core, core_factory
 from tests.hypothesis.common import OracleFS, rule_once, rule
 
+from tests.common import InMemoryLocalDB
+
 
 # The point is not to find breaking filenames here, so keep it simple
 st_entry_name = st.text(alphabet=ascii_lowercase, min_size=1, max_size=3)
@@ -27,7 +29,7 @@ async def test_offline_core_tree(TrioDriverRuleBasedStateMachine, backend_addr, 
             workdir = tmpdir.mkdir("try-%s" % self.count)
 
             config = {"base_settings_path": workdir.strpath, "backend_addr": backend_addr}
-            alice.local_storage_db_path = str(workdir / "alice-local_storage")
+            alice.local_db = InMemoryLocalDB(str(workdir / "alice-local_storage"))
 
             async with core_factory(**config) as core:
                 await core.login(alice)

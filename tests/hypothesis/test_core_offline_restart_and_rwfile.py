@@ -3,7 +3,7 @@ from hypothesis import strategies as st, note
 
 from parsec.utils import to_jsonb64, from_jsonb64
 
-from tests.common import connect_core, core_factory
+from tests.common import connect_core, core_factory, bootstrap_device
 from tests.hypothesis.common import rule, failure_reproducer, reproduce_rule
 
 
@@ -94,7 +94,7 @@ def rule_selector():
                 "backend_addr": backend_addr,
                 "block_size": BLOCK_SIZE,
             }
-            alice.local_storage_db_path = str(workdir / "alice-local_storage")
+            alice = bootstrap_device("alice", "dev1")
 
             self.sys_cmd = lambda x: self.communicator.send(("sys", x))
             self.core_cmd = lambda x: self.communicator.send(("core", x))

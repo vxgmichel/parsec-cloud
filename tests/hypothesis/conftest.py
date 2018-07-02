@@ -56,14 +56,6 @@ async def portal():
 
 
 @pytest.fixture
-def hypothesis_settings(request):
-    return hypothesis.settings(
-        max_examples=pytest.config.getoption("--hypothesis-max-examples"),
-        derandomize=pytest.config.getoption("--hypothesis-derandomize"),
-    )
-
-
-@pytest.fixture
 async def TrioDriverRuleBasedStateMachine(nursery, portal, loghandler, hypothesis_settings):
     class TrioDriverRuleBasedStateMachine(RuleBasedStateMachine):
         _portal = portal

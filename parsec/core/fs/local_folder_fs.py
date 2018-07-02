@@ -1,6 +1,4 @@
-import attr
 import pendulum
-from collections import defaultdict
 
 from parsec.signals import get_signal
 from parsec.core.local_db import LocalDBMissingEntry
@@ -27,7 +25,11 @@ class FSInvalidPath(Exception):
     pass
 
 
-class LocalManifestFS:
+class FSManifestLocalMiss(Exception):
+    pass
+
+
+class LocalFolderFS:
     def __init__(self, device):
         self.local_author = device.user_id
         self.root_access = device.user_manifest_access
@@ -78,18 +80,18 @@ class LocalManifestFS:
 
         found = _recursive_search(self.root_access, "")
         if not found:
-            raise LocalDBMissingEntry(entry_id)
+            raise FSManifestLocalMiss(entry_id)
         return found
 
     def _retrieve_entry(self, path, collector=None):
         assert "//" not in path
         assert path.startswith("/")
 
-        def _retrieve_entry_recursive(curr_access, hops):
+        def _retrieve_entry_recursive(curr_access, curr_path, hops):
             try:
                 curr_manifest = self._local_db.get(curr_access)
-            except KeyError:
-                raise LocalDBMissingEntry(curr_access)
+            except LocalDBMissingEntry as exc:
+                raise FSManifestLocalMiss(curr_access) from exc
 
             if not hops:
                 if collector:
@@ -97,20 +99,22 @@ class LocalManifestFS:
                 return curr_access, curr_manifest
 
             if not is_folder_manifest(curr_manifest):
-                raise FSInvalidPath(path)
+                raise NotADirectoryError(20, "Not a directory", curr_path)
 
             if collector:
                 collector(curr_access, curr_manifest)
 
             hop, *hops = hops
             try:
-                return _retrieve_entry_recursive(curr_manifest["children"][hop], hops)
+                return _retrieve_entry_recursive(
+                    curr_manifest["children"][hop], f"{curr_path}/{hop}", hops
+                )
 
             except KeyError:
-                raise FSInvalidPath(path)
+                raise FileNotFoundError(2, "No such file or directory", curr_path)
 
         hops = [hop for hop in path.split("/") if hop]
-        return _retrieve_entry_recursive(self.root_access, hops)
+        return _retrieve_entry_recursive(self.root_access, "", hops)
 
     def get_sync_strategy(self, path, recursive):
         path = normalize_path(path)
@@ -165,12 +169,14 @@ class LocalManifestFS:
                 "children": list(sorted(manifest["children"].keys())),
             }
 
-    def file_create(self, path):
+    def touch(self, path):
         path = normalize_path(path)
         parent_path, child_name = path.rsplit("/", 1)
-        access, manifest = self._retrieve_entry(parent_path or '/')
+        access, manifest = self._retrieve_entry(parent_path or "/")
         if not is_folder_manifest(manifest):
-            raise FSInvalidPath(path)
+            raise NotADirectoryError(20, "Not a directory", parent_path)
+        if child_name in manifest["children"]:
+            raise FileExistsError(17, "File exists", path)
 
         child_access = new_access()
         child_manifest = new_local_file_manifest(self.local_author)
@@ -181,12 +187,14 @@ class LocalManifestFS:
         get_signal("fs.entry.modified").send("local", id=access["id"])
         get_signal("fs.entry.created").send("local", id=child_access["id"])
 
-    def folder_create(self, path):
+    def mkdir(self, path):
         path = normalize_path(path)
         parent_path, child_name = path.rsplit("/", 1)
-        access, manifest = self._retrieve_entry(parent_path or '/')
+        access, manifest = self._retrieve_entry(parent_path or "/")
         if not is_folder_manifest(manifest):
-            raise FSInvalidPath(path)
+            raise NotADirectoryError(20, "Not a directory", parent_path)
+        if child_name in manifest["children"]:
+            raise FileExistsError(17, "File exists", path)
 
         child_access = new_access()
         child_manifest = new_local_folder_manifest(self.local_author)
@@ -197,23 +205,68 @@ class LocalManifestFS:
         get_signal("fs.entry.modified").send("local", id=access["id"])
         get_signal("fs.entry.created").send("local", id=child_access["id"])
 
+    def _delete(self, path, expect=None):
+        path = normalize_path(path)
+        if path == "/":
+            raise PermissionError(13, "Permission denied", path)
+        parent_path, child_name = path.rsplit("/", 1)
+        parent_access, parent_manifest = self._retrieve_entry(parent_path or "/")
+        if not is_folder_manifest(parent_manifest):
+            raise NotADirectoryError(20, "Not a directory", parent_path)
+
+        try:
+            item_access = parent_manifest["children"].pop(child_name)
+        except KeyError:
+            raise FileNotFoundError(2, "No such file or directory", path)
+
+        item_manifest = self._local_db.get(item_access)
+        if is_folder_manifest(item_manifest):
+            if expect == "file":
+                raise IsADirectoryError(21, "Is a directory", path)
+            if item_manifest["children"]:
+                raise OSError(39, "Directory not empty", path)
+        elif expect == "folder":
+            raise NotADirectoryError(20, "Not a directory", path)
+
+        self._local_db.set(parent_access, parent_manifest)
+        get_signal("fs.entry.modified").send("local", id=parent_access["id"])
+
+    def delete(self, path):
+        self._delete(path)
+
+    def unlink(self, path):
+        self._delete(path, expect="file")
+
+    def rmdir(self, path):
+        self._delete(path, expect="folder")
+
     def move(self, src, dst):
         src = normalize_path(src)
         dst = normalize_path(dst)
         parent_src, child_src = src.rsplit("/", 1)
         parent_dst, child_dst = dst.rsplit("/", 1)
-        parent_src = parent_src or '/'
-        parent_dst = parent_dst or '/'
+        parent_src = parent_src or "/"
+        parent_dst = parent_dst or "/"
 
         if parent_src == parent_dst:
             parent_access, parent_manifest = self._retrieve_entry(parent_src)
             if not is_folder_manifest(parent_manifest):
-                raise FSInvalidPath(src)
+                raise NotADirectoryError(20, "Not a directory", parent_src)
+
+            if dst.startswith(src + "/"):
+                raise OSError(22, "Invalid argument", src, None, dst)
 
             try:
                 entry = parent_manifest["children"].pop(child_src)
             except KeyError:
-                raise FSInvalidPath(src)
+                raise FileNotFoundError(2, "No such file or directory", src)
+
+            existing_entry_access = parent_manifest["children"].get(child_dst)
+            if existing_entry_access:
+                existing_entry_manifest = self._local_db.get(existing_entry_access)
+                if is_folder_manifest(existing_entry_manifest):
+                    raise IsADirectoryError(21, "Is a directory")
+
             parent_manifest["children"][child_dst] = entry
             mark_manifest_modified(parent_manifest)
 
@@ -223,15 +276,26 @@ class LocalManifestFS:
         else:
             parent_src_access, parent_src_manifest = self._retrieve_entry(parent_src)
             if not is_folder_manifest(parent_src_manifest):
-                raise FSInvalidPath(parent_src)
+                raise NotADirectoryError(20, "Not a directory", parent_src)
+
             parent_dst_access, parent_dst_manifest = self._retrieve_entry(parent_dst)
-            if not is_folder_manifest(parent_src_manifest):
-                raise FSInvalidPath(parent_dst)
+            if not is_folder_manifest(parent_dst_manifest):
+                raise NotADirectoryError(20, "Not a directory", parent_dst)
+
+            if dst.startswith(src + "/"):
+                raise OSError(22, "Invalid argument", src, None, dst)
 
             try:
                 entry = parent_src_manifest["children"].pop(child_src)
             except KeyError:
-                raise FSInvalidPath(src)
+                raise FileNotFoundError(2, "No such file or directory", src)
+
+            existing_entry_access = parent_dst_manifest["children"].get(child_dst)
+            if existing_entry_access:
+                existing_entry_manifest = self._local_db.get(existing_entry_access)
+                if is_folder_manifest(existing_entry_manifest):
+                    raise IsADirectoryError(21, "Is a directory")
+
             parent_dst_manifest["children"][child_dst] = entry
 
             mark_manifest_modified(parent_src_manifest)
@@ -242,124 +306,3 @@ class LocalManifestFS:
 
             get_signal("fs.entry.modified").send("local", id=parent_src_access["id"])
             get_signal("fs.entry.modified").send("local", id=parent_dst_access["id"])
-
-
-class LocalFileFSMissingBlockEntries(Exception):
-    def __init__(self, accesses):
-        super().__init__(accesses)
-        self.accesses = accesses
-
-
-@attr.s(slots=True)
-class FileCursor:
-    access = attr.ib()
-    offset = attr.ib(default=0)
-
-
-class LocalFileFS:
-    def __init__(self, local_db):
-        self._local_db = local_db
-        self._opened_cursors = {}
-        self._hot_files = defaultdict(list)
-        self._next_fd = 1
-
-    def open(self, access):
-        cursor = FileCursor(access)
-        fd = self._next_fd
-        self._opened_cursors[fd] = cursor
-        self._next_fd += 1
-        return fd
-
-    def close(self, fd):
-        self.flush(fd)
-        del self._opened_cursors[fd]
-
-    def seek(self, fd, offset):
-        cursor = self._opened_cursors[fd]
-        cursor.offset = offset
-
-    def write(self, fd, content, offset=0):
-        cursor = self._opened_cursors[fd]
-        self._hot_files[cursor.access["id"]].append((content, offset, pendulum.now()))
-        cursor.offset += len(content)
-
-    def read(self, fd, size=-1, offset=0):
-        cursor = self._opened_cursors[fd]
-
-        manifest = self._local_db.get(cursor.access)
-        assert is_file_manifest(manifest)
-        data = bytearray()
-        missing = []
-        for block_access in manifest["blocks"]:
-            try:
-                block_content = self._local_db.get(block_access)
-            except LocalDBMissingEntry:
-                missing.append(block_access)
-                continue
-            data[
-                block_access["offset"] : block_access["offset"] + block_access["size"]
-            ] = block_content
-        if missing:
-            raise LocalFileFSMissingBlockEntries(missing)
-
-        for block_access in manifest["dirty_blocks"]:
-            try:
-                block_content = self._local_db.get(block_access)
-            except LocalDBMissingEntry as exc:
-                raise RuntimeError() from exc
-            data[
-                block_access["offset"] : block_access["offset"] + block_access["size"]
-            ] = block_content
-
-        pending_writes = self._hot_files[cursor.access["id"]]
-        for write_content, write_offset, _ in pending_writes:
-            data[write_offset : write_offset + len(write_content)] = write_content
-
-        if size < 0:
-            data = data[offset:]
-        else:
-            data = data[offset : offset + size]
-
-        cursor.offset += len(data)
-        return data
-
-    def need_flush(self, fd):
-        cursor = self._opened_cursors[fd]
-        return bool(self._hot_files[cursor.access["id"]])
-
-    def flush(self, fd):
-        cursor = self._opened_cursors[fd]
-        access = cursor.access
-
-        pending_writes = self._hot_files[access["id"]]
-        if not pending_writes:
-            return
-
-        new_dirty_blocks = []
-        block_max_end = 0
-        for content, offset, _ in pending_writes:
-            block_access = new_access()
-            self._local_db.set(block_access, content)
-            new_dirty_blocks.append(
-                {
-                    "id": block_access["id"],
-                    "key": block_access["key"],
-                    "offset": offset,
-                    "size": len(content),
-                }
-            )
-            block_max_end = max(block_max_end, offset + len(content))
-
-        manifest = self._local_db.get(access)
-        assert is_file_manifest(manifest)
-        _, _, last_updated = pending_writes[-1]
-        if last_updated > manifest["updated"]:
-            manifest["updated"] = last_updated
-        manifest["dirty_blocks"] += new_dirty_blocks
-        manifest["size"] = max(block_max_end, manifest["size"])
-        mark_manifest_modified(manifest)
-        self._local_db.set(access, manifest)
-
-        del self._hot_files[access["id"]]
-
-        get_signal("fs.entry.modified").send("local", id=access["id"])

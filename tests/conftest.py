@@ -6,12 +6,9 @@ import socket
 import asyncpg
 import contextlib
 from unittest.mock import patch
-from nacl.public import PrivateKey
-from nacl.signing import SigningKey
+import hypothesis
 
 from parsec.signals import SignalsContext
-from parsec.core.fs.data import new_access, new_workspace_manifest, remote_to_local_manifest
-from parsec.core.devices_manager import Device
 from parsec.backend.exceptions import AlreadyExistsError as UserAlreadyExistsError
 from parsec.backend.drivers import postgresql as pg_driver
 
@@ -22,7 +19,8 @@ from tests.common import (
     core_factory,
     connect_backend,
     connect_core,
-    InMemoryLocalDB,
+    bootstrap_devices,
+    bootstrap_device,
 )
 from tests.open_tcp_stream_mock_wrapper import OpenTCPStreamMockWrapper
 
@@ -37,6 +35,14 @@ def pytest_addoption(parser):
         "--only-postgresql", action="store_true", help="Only run tests making use of PostgreSQL"
     )
     parser.addoption("--runslow", action="store_true", help="Don't skip slow tests")
+
+
+@pytest.fixture
+def hypothesis_settings(request):
+    return hypothesis.settings(
+        max_examples=pytest.config.getoption("--hypothesis-max-examples"),
+        derandomize=pytest.config.getoption("--hypothesis-derandomize"),
+    )
 
 
 def pytest_runtest_setup(item):
@@ -93,34 +99,9 @@ async def backend_store(request, asyncio_loop):
         return "mocked://"
 
 
-def bootstrap_device(user_id, devices_names):
-    user_privkey = PrivateKey.generate().encode()
-    first_device_id = "%s@%s" % (user_id, devices_names[0])
-
-    with freeze_time("2000-01-01"):
-        user_manifest = remote_to_local_manifest(new_workspace_manifest(first_device_id))
-    user_manifest["base_version"] = 1
-    user_manifest_access = new_access()
-
-    devices = []
-    for device_name in devices_names:
-        device_signkey = SigningKey.generate().encode()
-        device = Device(
-            "%s@%s" % (user_id, device_name),
-            user_privkey,
-            device_signkey,
-            user_manifest_access,
-            InMemoryLocalDB(),
-        )
-        device.local_db.set(user_manifest_access, user_manifest)
-        devices.append(device)
-
-    return devices
-
-
 @pytest.fixture
 def alice_devices():
-    return bootstrap_device("alice", ("dev1", "dev2"))
+    return bootstrap_devices("alice", ("dev1", "dev2"))
 
 
 @pytest.fixture
@@ -135,12 +116,12 @@ def alice2(tmpdir):
 
 @pytest.fixture
 def bob(tmpdir):
-    return bootstrap_device("bob", ["dev1"])[0]
+    return bootstrap_device("bob", "dev1")
 
 
 @pytest.fixture
 def mallory(tmpdir):
-    return bootstrap_device("mallory", ["dev1"])[0]
+    return bootstrap_device("mallory", "dev1")
 
 
 @pytest.fixture

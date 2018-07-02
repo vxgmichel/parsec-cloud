@@ -4,8 +4,12 @@ from unittest.mock import Mock
 from inspect import iscoroutinefunction
 from async_generator import asynccontextmanager
 from copy import deepcopy
+from nacl.public import PrivateKey
+from nacl.signing import SigningKey
 
 from parsec.core import Core, CoreConfig
+from parsec.core.fs.data import new_access, new_workspace_manifest, remote_to_local_manifest
+from parsec.core.devices_manager import Device
 from parsec.core.local_db import LocalDB, LocalDBMissingEntry
 from parsec.handshake import ClientHandshake, AnonymousClientHandshake
 from parsec.networking import CookedSocket
@@ -23,7 +27,7 @@ class InMemoryLocalDB(LocalDB):
             raise LocalDBMissingEntry(access)
 
     def set(self, access, manifest):
-        self._data[access["id"]] = manifest
+        self._data[access["id"]] = deepcopy(manifest)
 
     def clear(self, access):
         del self._data[access["id"]]
@@ -155,3 +159,32 @@ async def core_factory(**config):
         finally:
             await core.teardown()
             nursery.cancel_scope.cancel()
+
+
+def bootstrap_device(user_id, device_name):
+    return bootstrap_devices(user_id, (device_name))[0]
+
+
+def bootstrap_devices(user_id, devices_names):
+    user_privkey = PrivateKey.generate().encode()
+    first_device_id = "%s@%s" % (user_id, devices_names[0])
+
+    with freeze_time("2000-01-01"):
+        user_manifest = remote_to_local_manifest(new_workspace_manifest(first_device_id))
+    user_manifest["base_version"] = 1
+    user_manifest_access = new_access()
+
+    devices = []
+    for device_name in devices_names:
+        device_signkey = SigningKey.generate().encode()
+        device = Device(
+            "%s@%s" % (user_id, device_name),
+            user_privkey,
+            device_signkey,
+            user_manifest_access,
+            InMemoryLocalDB(),
+        )
+        device.local_db.set(user_manifest_access, user_manifest)
+        devices.append(device)
+
+    return devices

@@ -14,6 +14,7 @@ class SignalsContext:
         return self.signals_namespace.signal(name)
 
     def push(self):
+        _signals_namespace.get()
         self._token = _signals_namespace.set(self.signals_namespace)
 
     def pop(self):

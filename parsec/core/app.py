@@ -4,7 +4,7 @@ import attr
 import logbook
 
 from parsec.networking import serve_client
-from parsec.signals import SignalsContext, get_signal, ANY
+from parsec.signals import get_signal, ANY
 from parsec.core.base import BaseAsyncComponent, NotInitializedError
 from parsec.core.sharing import Sharing
 from parsec.core.fs import FS
@@ -36,7 +36,6 @@ class Core(BaseAsyncComponent):
     def __init__(self, config):
         super().__init__()
         self.nursery = None
-        self.signals_context = SignalsContext()
         self.devices_manager = DevicesManager(os.path.join(config.base_settings_path, "devices"))
 
         self.config = config
@@ -88,7 +87,6 @@ class Core(BaseAsyncComponent):
         self.auth_events = None
 
     async def _init(self, nursery):
-        self.signals_context.push()
         self.nursery = nursery
 
     async def _teardown(self):
@@ -96,7 +94,6 @@ class Core(BaseAsyncComponent):
             await self.logout()
         except NotLoggedError:
             pass
-        self.signals_context.pop()
 
     async def login(self, device):
         async with self.auth_lock:
@@ -184,6 +181,7 @@ class ClientContext:
     registered_signals = attr.ib(default=attr.Factory(dict))
     received_signals = attr.ib(default=attr.Factory(lambda: trio.Queue(100)))
 
+    # TODO: rework this
     def subscribe_signal(self, signal_name, subject=ANY):
         key = (signal_name, subject)
         if key in self.registered_signals:

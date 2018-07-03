@@ -40,7 +40,7 @@ class Syncer:
         return notify_msgs
 
     def _get_local_entries(self):
-        entries_ids = []
+        entries = []
 
         def _recursive_get_local_entries_ids(access):
             try:
@@ -52,10 +52,12 @@ class Syncer:
                 for child_access in manifest["children"].values():
                     _recursive_get_local_entries_ids(child_access)
 
-            entries_ids.append((access["id"], access["rts"], manifest["base_version"]))
+            entries.append(
+                {"id": access["id"], "rts": access["rts"], "version": manifest["base_version"]}
+            )
 
         _recursive_get_local_entries_ids(self._local_manifest_fs.root_access)
-        return entries_ids
+        return entries
 
     async def full_sync(self):
         local_entries = self._get_local_entries()
@@ -85,8 +87,11 @@ class Syncer:
         assert ret["status"] == "ok"
         return ret
 
-    async def _backend_vlob_group_check(self, accesses):
-        pass
+    async def _backend_vlob_group_check(self, to_check):
+        payload = {"cmd": "vlob_group_check", "to_check": to_check}
+        ret = await self._backend_conn.send(payload)
+        assert ret["status"] == "ok"
+        return ret
 
     async def _backend_vlob_create(self, id, rts, wts, blob, notify):
         payload = {"cmd": "vlob_create", "id": id, "wts": wts, "rts": wts, "blob": to_jsonb64(blob)}

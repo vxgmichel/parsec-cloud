@@ -95,12 +95,10 @@ class BackendEventsManager(BaseAsyncComponent):
         self._el_task_info = new_elt_info
 
     def _event_pump_lost(self):
-        print("LOST", self._backend_offline)
         self._backend_offline = True
         get_signal("backend.offline").send(self.device.id)
 
     def _event_pump_ready(self):
-        print("READY", self._backend_offline)
         if self._backend_offline:
             self._backend_offline = False
             get_signal("backend.online").send(self.device.id)

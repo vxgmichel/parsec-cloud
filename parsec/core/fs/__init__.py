@@ -1,7 +1,7 @@
 import inspect
 
-# from parsec.beacon_monitor import BeaconMonitor
-# from parsec.sync_monitor import SyncMonitor
+from parsec.core.fs.beacon_monitor import BeaconMonitor
+from parsec.core.fs.sync_monitor import SyncMonitor
 from parsec.core.fs.local_folder_fs import (
     FSInvalidPath,  # noqa, republishing
     FSManifestLocalMiss,
@@ -23,18 +23,16 @@ class FS:
         # self._remote_loader = RemoteLoader(backend_conn, device.local_db)
         self._syncer = Syncer(device, backend_conn, self._local_folder_fs)
 
-        # self._beacon_monitor = BeaconMonitor(device, device.local_db)
-        # self._sync_monitor = SyncMonitor(self._local_folder_fs, self._syncer)
+        self._beacon_monitor = BeaconMonitor(device, device.local_db)
+        self._sync_monitor = SyncMonitor(self._local_folder_fs, self._syncer)
 
     async def init(self, nursery):
-        pass
-        # await self._beacon_monitor.init(nursery)
-        # await self._sync_monitor.init(nursery)
+        await self._beacon_monitor.init(nursery)
+        await self._sync_monitor.init(nursery)
 
     async def teardown(self):
-        pass
-        # await self._sync_monitor.teardown()
-        # await self._beacon_monitor.teardown()
+        await self._sync_monitor.teardown()
+        await self._beacon_monitor.teardown()
 
     async def _load_and_retry(self, fn, *args, **kwargs):
         while True:

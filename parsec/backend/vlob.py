@@ -4,7 +4,7 @@ import string
 from uuid import uuid4
 
 from parsec.utils import to_jsonb64
-from parsec.schema import BaseCmdSchema, fields
+from parsec.schema import BaseCmdSchema, UnknownCheckedSchema, fields
 
 
 TRUST_SEED_LENGTH = 12
@@ -26,6 +26,16 @@ class VlobAtom:
     blob = attr.ib(default=b"")
     version = attr.ib(default=1)
     is_sink = attr.ib(default=False)
+
+
+class CheckEntrySchema(UnknownCheckedSchema):
+    id = fields.String(required=True)
+    rts = fields.String(required=True)
+    version = fields.Integer(validate=lambda n: n >= 1, required=True)
+
+
+class cmd_GROUP_CHECK_Schema(BaseCmdSchema):
+    to_check = fields.List(fields.Nested(CheckEntrySchema()), required=True)
 
 
 class cmd_CREATE_Schema(BaseCmdSchema):
@@ -54,6 +64,11 @@ class BaseVlobComponent:
     def __init__(self, signal_ns):
         self._signal_vlob_updated = signal_ns.signal("vlob_updated")
 
+    async def api_vlob_group_check(self, client_ctx, msg):
+        msg = cmd_GROUP_CHECK_Schema().load_or_abort(msg)
+        changed = await self.group_check(**msg)
+        return {"status": "ok", "changed": changed}
+
     async def api_vlob_create(self, client_ctx, msg):
         msg = cmd_CREATE_Schema().load_or_abort(msg)
         await self.create(**msg)
@@ -73,6 +88,9 @@ class BaseVlobComponent:
         msg = cmd_UPDATE_Schema().load_or_abort(msg)
         await self.update(**msg)
         return {"status": "ok"}
+
+    async def group_check(self, to_check):
+        raise NotImplementedError()
 
     async def create(self, id, rts, wts, blob, notify_beacons=()):
         raise NotImplementedError()

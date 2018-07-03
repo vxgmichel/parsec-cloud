@@ -17,6 +17,17 @@ class MemoryVlobComponent(BaseVlobComponent):
         super().__init__(*args)
         self.vlobs = {}
 
+    async def group_check(self, to_check):
+        changed = []
+        for item in to_check:
+            id = item["id"]
+            rts = item["rts"]
+            version = item["version"]
+            vlob = await self.read(id, rts)
+            if vlob.version != version:
+                changed.append({"id": id, "version": vlob.version})
+        return changed
+
     async def create(self, id, rts, wts, blob, notify_beacons=()):
         # TODO
         # for beacon_id in notify_beacons:

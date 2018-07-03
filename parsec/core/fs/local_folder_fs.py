@@ -106,9 +106,8 @@ class LocalFolderFS:
 
             hop, *hops = hops
             try:
-                return _retrieve_entry_recursive(
-                    curr_manifest["children"][hop], f"{curr_path}/{hop}", hops
-                )
+                curr_path = f"{curr_path}/{hop}"
+                return _retrieve_entry_recursive(curr_manifest["children"][hop], curr_path, hops)
 
             except KeyError:
                 raise FileNotFoundError(2, "No such file or directory", curr_path)

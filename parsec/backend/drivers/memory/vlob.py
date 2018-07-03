@@ -17,9 +17,10 @@ class MemoryVlobComponent(BaseVlobComponent):
         super().__init__(*args)
         self.vlobs = {}
 
-    async def create(self, id, rts, wts, blob, notify_sinks=()):
-        for sink_id in notify_sinks:
-            await self._update_sink_vlob(sink_id, id.encode("utf-8"))
+    async def create(self, id, rts, wts, blob, notify_beacons=()):
+        # TODO
+        # for beacon_id in notify_beacons:
+        #     await self._update_sink_vlob(beacon_id, id.encode("utf-8"))
 
         vlob = MemoryVlob(id, rts, wts, blob)
         self.vlobs[vlob.id] = vlob
@@ -30,10 +31,10 @@ class MemoryVlobComponent(BaseVlobComponent):
             blob=vlob.blob_versions[0],
         )
 
-    async def read(self, id, trust_seed, version=None):
+    async def read(self, id, rts, version=None):
         try:
             vlob = self.vlobs[id]
-            if vlob.read_trust_seed != trust_seed:
+            if vlob.read_trust_seed != rts:
                 raise TrustSeedError()
 
         except KeyError:
@@ -52,10 +53,10 @@ class MemoryVlobComponent(BaseVlobComponent):
         except IndexError:
             raise VersionError("Wrong blob version.")
 
-    async def update(self, id, trust_seed, version, blob, notify_sinks=()):
+    async def update(self, id, wts, version, blob, notify_beacons=()):
         try:
             vlob = self.vlobs[id]
-            if vlob.write_trust_seed != trust_seed:
+            if vlob.write_trust_seed != wts:
                 raise TrustSeedError("Invalid write trust seed.")
 
         except KeyError:
@@ -67,8 +68,9 @@ class MemoryVlobComponent(BaseVlobComponent):
             raise VersionError("Wrong blob version.")
 
         self._signal_vlob_updated.send(id)
-        for sink_id in notify_sinks:
-            await self._update_sink_vlob(sink_id, id.encode("utf-8"))
+        # TODO
+        # for sink_id in notify_sinks:
+        #     await self._update_sink_vlob(sink_id, id.encode("utf-8"))
 
     async def _update_sink_vlob(self, sink_id, data):
         try:

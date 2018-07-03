@@ -7,6 +7,7 @@ from copy import deepcopy
 from nacl.public import PrivateKey
 from nacl.signing import SigningKey
 
+from parsec.signals import get_signal
 from parsec.core import Core, CoreConfig
 from parsec.core.fs.data import new_access, new_workspace_manifest, remote_to_local_manifest
 from parsec.core.devices_manager import Device
@@ -88,6 +89,7 @@ class FreezeTestOnBrokenStreamCookedSocket(CookedSocket):
             await trio.sleep_forever()
 
 
+# TODO: Rename to serve_app ?
 @asynccontextmanager
 async def run_app(app):
     async with trio.open_nursery() as nursery:
@@ -188,3 +190,17 @@ def bootstrap_devices(user_id, devices_names):
         devices.append(device)
 
     return devices
+
+
+def connect_signal_as_event(signal_name, signal_ns=None):
+    event = trio.Event()
+    callback = Mock(spec_set=())
+    callback.side_effect = lambda *args, **kwargs: event.set()
+
+    event.cb = callback  # Prevent weakref destruction
+    if not signal_ns:
+        signal = get_signal(signal_name)
+    else:
+        signal = signal_ns.signal(signal_name)
+    signal.connect(callback)
+    return event

@@ -9,7 +9,8 @@ from parsec.core.fs.local_folder_fs import (
 )
 from parsec.core.fs.local_file_fs import LocalFileFS, FSBlocksLocalMiss
 
-# from parsec.core.fs.syncer import Syncer
+from parsec.core.fs.syncer import Syncer
+
 # from parsec.core.fs.remote_loader import RemoteLoader
 
 
@@ -20,7 +21,7 @@ class FS:
         self._local_file_fs = LocalFileFS(device)
         self._local_folder_fs = LocalFolderFS(device)
         # self._remote_loader = RemoteLoader(backend_conn, device.local_db)
-        # self._syncer = Syncer(device, backend_conn, self._local_folder_fs)
+        self._syncer = Syncer(device, backend_conn, self._local_folder_fs)
 
         # self._beacon_monitor = BeaconMonitor(device, device.local_db)
         # self._sync_monitor = SyncMonitor(self._local_folder_fs, self._syncer)
@@ -112,15 +113,11 @@ class FS:
     async def delete(self, path):
         await self._load_and_retry(self._local_folder_fs.delete, path)
 
-    # async def sync(self, path, recursive=True):
-    #     print(id(self), "sync", path)
-    #     sync_path, sync_recursive = self._local_folder_fs.get_sync_strategy(
-    #         path, recursive
-    #     )
-    #     access = await self._load_and_retry(
-    #         self._local_folder_fs.get_access, sync_path
-    #     )
-    #     notify = self._local_folder_fs.get_beacons(sync_path)
-    #     await self._load_and_retry(
-    #         self._syncer.sync, access, recursive=sync_recursive, notify=notify
-    #     )
+    async def sync(self, path, recursive=True):
+        print(id(self), "sync", path)
+        sync_path, sync_recursive = self._local_folder_fs.get_sync_strategy(path, recursive)
+        access = await self._load_and_retry(self._local_folder_fs.get_access, sync_path)
+        notify = self._local_folder_fs.get_beacons(sync_path)
+        await self._load_and_retry(
+            self._syncer.sync, access, recursive=sync_recursive, notify=notify
+        )

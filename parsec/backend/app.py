@@ -194,7 +194,7 @@ class BackendApp:
 
     async def _api_ping(self, client_ctx, msg):
         msg = cmd_PING_Schema().load_or_abort(msg)
-        self.signal_ns.signal("ping").send(msg["ping"])
+        self.signal_ns.signal("ping").send(client_ctx.id, msg=msg["ping"])
         return {"status": "ok", "pong": msg["ping"]}
 
     async def _api_blockstore_post(self, client_ctx, msg):
@@ -222,9 +222,9 @@ class BackendApp:
             # TODO: is the `subject == None` valid here ?
             return {"status": "private_event", "reason": "This type of event is private."}
 
-        def _handle_event(sender):
+        def _handle_event(sender, **kwargs):
             try:
-                client_ctx.events.put_nowait((event, sender))
+                client_ctx.events.put_nowait((sender, event, kwargs))
             except trio.WouldBlock:
                 logger.warning("event queue is full for %s" % client_ctx.id)
 
@@ -233,6 +233,7 @@ class BackendApp:
             self.signal_ns.signal(event).connect(_handle_event, sender=subject, weak=True)
         else:
             self.signal_ns.signal(event).connect(_handle_event, weak=True)
+            print("BACKEND connect signal", event, self.signal_ns)
         return {"status": "ok"}
 
     async def _api_event_unsubscribe(self, client_ctx, msg):
@@ -250,14 +251,14 @@ class BackendApp:
     async def _api_event_listen(self, client_ctx, msg):
         msg = cmd_EVENT_LISTEN_Schema().load_or_abort(msg)
         if msg["wait"]:
-            event, subject = await client_ctx.events.get()
+            sender, event, kwargs = await client_ctx.events.get()
         else:
             try:
-                event, subject = client_ctx.events.get_nowait()
+                sender, event, kwargs = client_ctx.events.get_nowait()
             except trio.WouldBlock:
                 return {"status": "no_events"}
 
-        return {"status": "ok", "event": event, "subject": subject}
+        return {"status": "ok", "event": event, "sender": sender, **kwargs}
 
     async def _api_event_list_subscribed(self, client_ctx, msg):
         BaseCmdSchema().load_or_abort(msg)  # empty msg expected

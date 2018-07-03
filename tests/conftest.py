@@ -110,17 +110,17 @@ def alice(alice_devices):
 
 
 @pytest.fixture
-def alice2(tmpdir):
+def alice2(alice_devices):
     return alice_devices[1]
 
 
 @pytest.fixture
-def bob(tmpdir):
+def bob(alice_devices):
     return bootstrap_device("bob", "dev1")
 
 
 @pytest.fixture
-def mallory(tmpdir):
+def mallory(alice_devices):
     return bootstrap_device("mallory", "dev1")
 
 
@@ -154,6 +154,7 @@ def unused_tcp_addr(unused_tcp_port):
 @pytest.fixture
 def signal_ns():
     with SignalsContext() as ctx:
+        ctx.signals_namespace
         yield ctx.signals_namespace
 
 
@@ -168,6 +169,8 @@ async def backend(default_devices, backend_store, config={}):
         **{"blockstore_postgresql": True, "dburl": backend_store, **config}
     ) as backend:
 
+        # Need to initialize backend with users/devices, and for each user
+        # store it user manifest
         with freeze_time("2000-01-01"):
             for device in default_devices:
                 try:
@@ -177,6 +180,16 @@ async def backend(default_devices, backend_store, config={}):
                         broadcast_key=device.user_pubkey.encode(),
                         devices=[(device.device_name, device.device_verifykey.encode())],
                     )
+
+                    access = device.user_manifest_access
+                    manifest = device.local_db.get(access)
+                    # TODO...
+                    import pickle
+
+                    await backend.vlob.create(
+                        access["id"], access["rts"], access["wts"], pickle.dumps(manifest)
+                    )
+
                 except UserAlreadyExistsError:
                     await backend.user.create_device(
                         user_id=device.user_id,
@@ -268,26 +281,41 @@ async def core2(asyncio_loop, backend_addr, tmpdir, default_devices, config={}):
 
 
 @pytest.fixture
-async def alice_core_sock(core, alice):
+async def alice_core(core, alice):
     assert not core.auth_device, "Core already logged"
-    async with connect_core(core) as sock:
-        await core.login(alice)
+    await core.login(alice)
+    return core
+
+
+@pytest.fixture
+async def alice2_core2(core2, alice2):
+    assert not core2.auth_device, "Core already logged"
+    await core2.login(alice2)
+    return core2
+
+
+@pytest.fixture
+async def bob_core2(core2, bob):
+    assert not core2.auth_device, "Core already logged"
+    await core2.login(bob)
+    return core2
+
+
+@pytest.fixture
+async def alice_core_sock(alice_core):
+    async with connect_core(alice_core) as sock:
         yield sock
 
 
 @pytest.fixture
-async def alice2_core2_sock(core2, alice2):
-    assert not core2.auth_device, "Core already logged"
-    async with connect_core(core2) as sock:
-        await core2.login(alice2)
+async def alice2_core2_sock(alice2_core2):
+    async with connect_core(alice2_core2) as sock:
         yield sock
 
 
 @pytest.fixture
-async def bob_core2_sock(core2, bob):
-    assert not core2.auth_device, "Core already logged"
-    async with connect_core(core2) as sock:
-        await core2.login(bob)
+async def bob_core2_sock(bob_core2):
+    async with connect_core(bob_core2) as sock:
         yield sock
 
 

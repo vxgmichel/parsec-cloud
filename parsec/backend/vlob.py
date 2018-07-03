@@ -29,23 +29,25 @@ class VlobAtom:
 
 
 class cmd_CREATE_Schema(BaseCmdSchema):
-    # TODO: blob must be present
-    blob = fields.Base64Bytes(missing=to_jsonb64(b""))
-    notify_sinks = fields.List(fields.String())
+    id = fields.String(required=True)
+    rts = fields.String(required=True)
+    wts = fields.String(required=True)
+    blob = fields.Base64Bytes(required=True)
+    notify_beacons = fields.List(fields.String())
 
 
 class cmd_READ_Schema(BaseCmdSchema):
     id = fields.String(required=True)
     version = fields.Integer(validate=lambda n: n >= 1)
-    trust_seed = fields.String(required=True)
+    rts = fields.String(required=True)
 
 
 class cmd_UPDATE_Schema(BaseCmdSchema):
     id = fields.String(required=True)
     version = fields.Integer(validate=lambda n: n > 1)
-    trust_seed = fields.String(required=True)
+    wts = fields.String(required=True)
     blob = fields.Base64Bytes(required=True)
-    notify_sinks = fields.List(fields.String())
+    notify_beacons = fields.List(fields.String())
 
 
 class BaseVlobComponent:
@@ -54,16 +56,8 @@ class BaseVlobComponent:
 
     async def api_vlob_create(self, client_ctx, msg):
         msg = cmd_CREATE_Schema().load_or_abort(msg)
-        id = uuid4().hex
-        rts = uuid4().hex
-        wts = uuid4().hex
-        atom = await self.create(id, rts, wts, **msg)
-        return {
-            "status": "ok",
-            "id": atom.id,
-            "read_trust_seed": atom.read_trust_seed,
-            "write_trust_seed": atom.write_trust_seed,
-        }
+        await self.create(**msg)
+        return {"status": "ok"}
 
     async def api_vlob_read(self, client_ctx, msg):
         msg = cmd_READ_Schema().load_or_abort(msg)
@@ -80,11 +74,11 @@ class BaseVlobComponent:
         await self.update(**msg)
         return {"status": "ok"}
 
-    async def create(self, rts, wts, blob):
+    async def create(self, id, rts, wts, blob, notify_beacons=()):
         raise NotImplementedError()
 
-    async def read(self, id, trust_seed, version=None):
+    async def read(self, id, rts, version=None):
         raise NotImplementedError()
 
-    async def update(self, id, trust_seed, version, blob):
+    async def update(self, id, wts, version, blob, notify_beacons=()):
         raise NotImplementedError()

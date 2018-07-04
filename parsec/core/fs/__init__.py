@@ -8,10 +8,8 @@ from parsec.core.fs.local_folder_fs import (
     LocalFolderFS,
 )
 from parsec.core.fs.local_file_fs import LocalFileFS, FSBlocksLocalMiss
-
 from parsec.core.fs.syncer import Syncer
-
-# from parsec.core.fs.remote_loader import RemoteLoader
+from parsec.core.fs.remote_loader import RemoteLoader
 
 
 class FS:
@@ -20,7 +18,7 @@ class FS:
 
         self._local_file_fs = LocalFileFS(device)
         self._local_folder_fs = LocalFolderFS(device)
-        # self._remote_loader = RemoteLoader(backend_conn, device.local_db)
+        self._remote_loader = RemoteLoader(backend_conn, device.local_db)
         self._syncer = Syncer(device, backend_conn, self._local_folder_fs)
 
         self._beacon_monitor = BeaconMonitor(device, device.local_db)

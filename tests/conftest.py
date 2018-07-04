@@ -151,6 +151,28 @@ def unused_tcp_addr(unused_tcp_port):
     return "tcp://127.0.0.1:%s" % unused_tcp_port
 
 
+@pytest.fixture(autouse=True)
+def magical_per_app_signals_context():
+    """
+    SignalsContext is supposed to be used per-coroutine
+    """
+    import inspect
+    import parsec.signals
+
+    vanilla_signals_namespace_get = parsec.signals._signals_namespace.get
+
+    def _signals_namespace_get():
+        for stack_item in inspect.stack():
+            sctx = getattr(stack_item.frame.f_locals.get("self"), "signals_context", None)
+            if sctx:
+                return sctx.signals_namespace
+        else:
+            return vanilla_signals_namespace_get()
+
+    with patch("parsec.signals._signals_namespace.get", new=_signals_namespace_get):
+        yield
+
+
 @pytest.fixture
 def signal_ns():
     with SignalsContext() as ctx:

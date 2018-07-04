@@ -1,7 +1,6 @@
 import attr
 import random
 import string
-from uuid import uuid4
 
 from parsec.utils import to_jsonb64
 from parsec.schema import BaseCmdSchema, UnknownCheckedSchema, fields
@@ -31,7 +30,7 @@ class VlobAtom:
 class CheckEntrySchema(UnknownCheckedSchema):
     id = fields.String(required=True)
     rts = fields.String(required=True)
-    version = fields.Integer(validate=lambda n: n >= 1, required=True)
+    version = fields.Integer(required=True)
 
 
 class cmd_GROUP_CHECK_Schema(BaseCmdSchema):

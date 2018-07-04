@@ -23,9 +23,12 @@ class MemoryVlobComponent(BaseVlobComponent):
             id = item["id"]
             rts = item["rts"]
             version = item["version"]
-            vlob = await self.read(id, rts)
-            if vlob.version != version:
-                changed.append({"id": id, "version": vlob.version})
+            if version == 0:
+                changed.append({"id": id, "version": version})
+            else:
+                vlob = await self.read(id, rts)
+                if vlob.version != version:
+                    changed.append({"id": id, "version": vlob.version})
         return changed
 
     async def create(self, id, rts, wts, blob, notify_beacons=()):

@@ -14,13 +14,20 @@ class SignalsContext:
         return self.signals_namespace.signal(name)
 
     def push(self):
-        _signals_namespace.get()
+        # TODO: renable sanity check
+        # try:
+        #     _signals_namespace.get()
+        # except LookupError:
+        #     pass
+        # else:
+        #     raise RuntimeError("Another SignalsContext is already pushed")
         self._token = _signals_namespace.set(self.signals_namespace)
 
     def pop(self):
-        ns = _signals_namespace.get()
-        if ns is not self.signals_namespace:
-            raise RuntimeError("Invalid order in stack")
+        # TODO: renable sanity check
+        # ns = _signals_namespace.get()
+        # if ns is not self.signals_namespace:
+        #     raise RuntimeError("Invalid order in stack")
         _signals_namespace.reset(self._token)
 
     def __enter__(self):

@@ -19,6 +19,7 @@ from parsec.core.fs.data import (
     local_to_remote_manifest,
 )
 from parsec.signals import get_signal
+from parsec.core.fs.local_folder_fs import FSManifestLocalMiss
 from parsec.core.local_db import LocalDBMissingEntry
 from parsec.utils import to_jsonb64
 
@@ -39,7 +40,7 @@ class Syncer:
             notify_msgs.append((beacon_id, beacon_ciphered_msg))
         return notify_msgs
 
-    def _get_local_entries(self):
+    def _get_group_check_local_entries(self):
         entries = []
 
         def _recursive_get_local_entries_ids(access):
@@ -51,6 +52,7 @@ class Syncer:
             if is_folder_manifest(manifest):
                 for child_access in manifest["children"].values():
                     _recursive_get_local_entries_ids(child_access)
+            print(access)
 
             entries.append(
                 {"id": access["id"], "rts": access["rts"], "version": manifest["base_version"]}
@@ -60,16 +62,16 @@ class Syncer:
         return entries
 
     async def full_sync(self):
-        local_entries = self._get_local_entries()
+        local_entries = self._get_group_check_local_entries()
         need_sync_entries = await self._backend_vlob_group_check(local_entries)
-        for id, version in need_sync_entries:
-            await self.sync_by_id(id)
+        for chaned_item in need_sync_entries["changed"]:
+            await self.sync_by_id(chaned_item["id"])
 
     async def sync_by_id(self, entry_id):
         try:
             path, access, _ = self._local_manifest_fs.get_entry_path(entry_id)
             notify = self._local_manifest_fs.get_beacons(path)
-        except LocalDBMissingEntry:
+        except FSManifestLocalMiss:
             # Entry not locally present, nothing to do
             return
         await self.sync(access, notify=notify)
@@ -82,7 +84,7 @@ class Syncer:
             await self._sync_nolock(access, recursive, notify)
 
     async def _backend_block_post(self, access, blob):
-        payload = {"cmd": "blockstore_post", "id": access["id"], "content": to_jsonb64(blob)}
+        payload = {"cmd": "blockstore_post", "id": access["id"], "block": to_jsonb64(blob)}
         ret = await self._backend_conn.send(payload)
         assert ret["status"] == "ok"
         return ret
@@ -94,7 +96,7 @@ class Syncer:
         return ret
 
     async def _backend_vlob_create(self, id, rts, wts, blob, notify):
-        payload = {"cmd": "vlob_create", "id": id, "wts": wts, "rts": wts, "blob": to_jsonb64(blob)}
+        payload = {"cmd": "vlob_create", "id": id, "wts": wts, "rts": rts, "blob": to_jsonb64(blob)}
         ret = await self._backend_conn.send(payload)
         assert ret["status"] == "ok"
         return ret
@@ -140,7 +142,7 @@ class Syncer:
                 "created": manifest["created"],
                 "updated": manifest["updated"],
                 "size": manifest["size"],
-                "author": self.device.device_id,
+                "author": self.device.id,
             }
 
             raw = pickle.dumps(remote_manifest)

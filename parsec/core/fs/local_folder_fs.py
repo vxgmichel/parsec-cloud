@@ -26,7 +26,9 @@ class FSInvalidPath(Exception):
 
 
 class FSManifestLocalMiss(Exception):
-    pass
+    def __init__(self, access):
+        super().__init__(access)
+        self.access = access
 
 
 class LocalFolderFS:
@@ -131,11 +133,10 @@ class LocalFolderFS:
         else:
             return path, recursive
 
-        sync_recursive = {}
-        curr_sync_recursive = sync_recursive
-        for hop in path[len(curr_parent_path) :].split("/")[1:]:
-            curr_sync_recursive[hop] = {}
-            curr_sync_recursive = curr_sync_recursive[hop]
+        sync_recursive = recursive
+        for hop in reversed(path[len(curr_parent_path) :].split("/")):
+            sync_recursive = {hop: sync_recursive}
+
         return sync_path, sync_recursive
 
     def get_access(self, path):

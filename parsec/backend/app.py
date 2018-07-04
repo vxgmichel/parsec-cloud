@@ -174,6 +174,7 @@ class BackendApp:
             "device_refuse_configuration_try": self.user.api_device_refuse_configuration_try,
             "blockstore_post": self._api_blockstore_post,
             "blockstore_get": self._api_blockstore_get,
+            "vlob_group_check": self.vlob.api_vlob_group_check,
             "vlob_create": self.vlob.api_vlob_create,
             "vlob_read": self.vlob.api_vlob_read,
             "vlob_update": self.vlob.api_vlob_update,

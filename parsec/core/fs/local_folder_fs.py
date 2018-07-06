@@ -37,11 +37,12 @@ class LocalFolderFS:
         self._local_db = device.local_db
         self.signal_ns = signal_ns
 
-        # Sanity check
-        try:
-            self._local_db.get(self.root_access)
-        except LocalDBMissingEntry as exc:
-            raise RuntimeError("Device %s is not initialized" % device) from exc
+        # TODO: useful ?
+        # # Sanity check
+        # try:
+        #     self._local_db.get(self.root_access)
+        # except LocalDBMissingEntry as exc:
+        #     raise RuntimeError("Device %s is not initialized" % device) from exc
 
     def set_manifest(self, access, manifest):
         self._local_db.set(access, manifest)

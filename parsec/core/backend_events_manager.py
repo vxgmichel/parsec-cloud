@@ -17,15 +17,27 @@ logger = logbook.Logger("parsec.core.backend_events_manager")
 
 class BackendEventPingRepSchema(UnknownCheckedSchema):
     status = fields.CheckedConstant("ok", required=True)
-    subject = fields.String(required=True)
     sender = fields.String(required=True)
     event = fields.String(required=True)
+    subject = fields.String(required=True)
+
+
+class BackendEventDeviceTryClaimSubmittedRepSchema(UnknownCheckedSchema):
+    status = fields.CheckedConstant("ok", required=True)
+    sender = fields.String(required=True)
+    event = fields.String(required=True)
+    subject = fields.String(required=True)
+    device_name = fields.String(required=True)
+    config_try_id = fields.String(required=True)
 
 
 class BackendEventListenRepSchema(OneOfSchema):
     type_field = "event"
     type_field_remove = False
-    type_schemas = {"ping": BackendEventPingRepSchema()}
+    type_schemas = {
+        "ping": BackendEventPingRepSchema(),
+        "device_try_claim_submitted": BackendEventDeviceTryClaimSubmittedRepSchema(),
+    }
 
     def get_obj_type(self, obj):
         return obj["event"]

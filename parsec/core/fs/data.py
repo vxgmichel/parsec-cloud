@@ -1,5 +1,11 @@
 from uuid import uuid4
 import pendulum
+import nacl.secret
+import nacl.utils
+
+
+def _generate_secret_key():
+    return nacl.utils.random(nacl.secret.SecretBox.KEY_SIZE)
 
 
 def new_workspace_manifest(author):
@@ -45,7 +51,7 @@ def new_file_manifest(author):
 
 def new_access():
     id = uuid4().hex
-    return {"id": id, "rts": uuid4().hex, "wts": uuid4().hex, "key": b"<sym %s>" % id.encode()}
+    return {"id": id, "rts": uuid4().hex, "wts": uuid4().hex, "key": _generate_secret_key()}
 
 
 def new_local_workspace_manifest(author):

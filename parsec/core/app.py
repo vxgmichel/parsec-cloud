@@ -191,14 +191,14 @@ class ClientContext:
         if key in self.registered_signals:
             raise KeyError("%s@%s already subscribed" % key)
 
-        def _handle_event(sender):
+        def _handle_event(sender, **kwargs):
             try:
-                self.received_signals.put_nowait((signal_name, sender))
+                self.received_signals.put_nowait((signal_name, sender, kwargs))
             except trio.WouldBlock:
                 logger.warning("{!r}: event queue is full", self)
 
         self.registered_signals[key] = _handle_event
-        self.signal_ns.signal(signal_name).connect(_handle_event, sender=subject, weak=True)
+        self.signal_ns.signal(signal_name).connect(_handle_event, weak=True)
 
     def unsubscribe_signal(self, signal_name, subject=ANY):
         key = (signal_name, subject)

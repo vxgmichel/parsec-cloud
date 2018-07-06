@@ -16,16 +16,17 @@ class DeviceDeclareSchema(BaseCmdSchema):
 
 
 class DeviceGetConfigurationTrySchema(BaseCmdSchema):
-    configuration_try_id = fields.String(required=True)
+    config_try_id = fields.String(required=True)
 
 
 class DeviceAcceptConfigurationTrySchema(BaseCmdSchema):
-    configuration_try_id = fields.String(required=True)
-    cyphered_user_privkey = fields.Base64Bytes(required=True)
+    config_try_id = fields.String(required=True)
+    ciphered_user_privkey = fields.Base64Bytes(required=True)
+    ciphered_user_manifest_access = fields.Base64Bytes(required=True)
 
 
 class DeviceRefuseConfigurationTrySchema(BaseCmdSchema):
-    configuration_try_id = fields.String(required=True)
+    config_try_id = fields.String(required=True)
     reason = fields.String(required=True)
 
 
@@ -34,9 +35,9 @@ class DeviceConfigureSchema(BaseCmdSchema):
     user_id = fields.String(required=True)
     device_name = fields.String(required=True)
     device_verify_key = fields.Base64Bytes(required=True)
-    # TODO: should be itself cyphered with a password-derived key
+    # TODO: should be itself ciphered with a password-derived key
     # to mitigate man-in-the-middle attack
-    user_privkey_cypherkey = fields.Base64Bytes(required=True)
+    user_privkey_cipherkey = fields.Base64Bytes(required=True)
 
 
 class DeviceSchema(UnknownCheckedSchema):
@@ -143,7 +144,7 @@ class BaseUserComponent:
             user_id,
             device_name,
             msg["device_verify_key"],
-            msg["user_privkey_cypherkey"],
+            msg["user_privkey_cipherkey"],
         )
 
         claim_answered = trio.Event()
@@ -177,14 +178,17 @@ class BaseUserComponent:
 
         return {
             "status": "ok",
-            "cyphered_user_privkey": to_jsonb64(config_try["cyphered_user_privkey"]),
+            "ciphered_user_privkey": to_jsonb64(config_try["ciphered_user_privkey"]),
+            "ciphered_user_manifest_access": to_jsonb64(
+                config_try["ciphered_user_manifest_access"]
+            ),
         }
 
     async def api_device_get_configuration_try(self, client_ctx, msg):
         msg = DeviceGetConfigurationTrySchema().load_or_abort(msg)
         try:
             config_try = await self.retrieve_device_configuration_try(
-                msg["configuration_try_id"], client_ctx.user_id
+                msg["config_try_id"], client_ctx.user_id
             )
         except NotFoundError:
             return {"status": "not_found", "reason": "Unknown device configuration try."}
@@ -194,14 +198,17 @@ class BaseUserComponent:
             "device_name": config_try["device_name"],
             "configuration_status": config_try["status"],
             "device_verify_key": to_jsonb64(config_try["device_verify_key"]),
-            "user_privkey_cypherkey": to_jsonb64(config_try["user_privkey_cypherkey"]),
+            "user_privkey_cipherkey": to_jsonb64(config_try["user_privkey_cipherkey"]),
         }
 
     async def api_device_accept_configuration_try(self, client_ctx, msg):
         msg = DeviceAcceptConfigurationTrySchema().load_or_abort(msg)
         try:
             await self.accept_device_configuration_try(
-                msg["configuration_try_id"], client_ctx.user_id, msg["cyphered_user_privkey"]
+                msg["config_try_id"],
+                client_ctx.user_id,
+                msg["ciphered_user_privkey"],
+                msg["ciphered_user_manifest_access"],
             )
         except NotFoundError:
             return {"status": "not_found", "reason": "Unknown device configuration try."}
@@ -210,7 +217,7 @@ class BaseUserComponent:
             return {"status": "already_done", "reason": "Device configuration try already done."}
 
         self._signal_device_try_claim_answered.send(
-            client_ctx.id, subject=client_ctx.user_id, config_try_id=msg["configuration_try_id"]
+            client_ctx.id, subject=client_ctx.user_id, config_try_id=msg["config_try_id"]
         )
         return {"status": "ok"}
 
@@ -218,7 +225,7 @@ class BaseUserComponent:
         msg = DeviceRefuseConfigurationTrySchema().load_or_abort(msg)
         try:
             await self.refuse_device_configuration_try(
-                msg["configuration_try_id"], client_ctx.user_id, msg["reason"]
+                msg["config_try_id"], client_ctx.user_id, msg["reason"]
             )
         except NotFoundError:
             return {"status": "not_found", "reason": "Unknown device configuration try."}
@@ -227,7 +234,7 @@ class BaseUserComponent:
             return {"status": "already_done", "reason": "Device configuration try already done."}
 
         self._signal_device_try_claim_answered.send(
-            client_ctx.id, subject=client_ctx.user_id, config_try_id=msg["configuration_try_id"]
+            client_ctx.id, subject=client_ctx.user_id, config_try_id=msg["config_try_id"]
         )
         return {"status": "ok"}
 
@@ -243,14 +250,16 @@ class BaseUserComponent:
         raise NotImplementedError()
 
     async def register_device_configuration_try(
-        self, config_try_id, id, device_name, device_verify_key, user_privkey_cypherkey
+        self, config_try_id, id, device_name, device_verify_key, user_privkey_cipherkey
     ):
         raise NotImplementedError()
 
     async def retrieve_device_configuration_try(self, config_try_id, user_id):
         raise NotImplementedError()
 
-    async def accept_device_configuration_try(self, config_try_id, user_id, cyphered_user_privkey):
+    async def accept_device_configuration_try(
+        self, config_try_id, user_id, ciphered_user_privkey, ciphered_user_manifest_access
+    ):
         raise NotImplementedError()
 
     async def refuse_device_configuration_try(self, config_try_id, user_id, reason):

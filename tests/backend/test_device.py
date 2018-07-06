@@ -61,7 +61,7 @@ async def test_device_configure(
 
     mock_generate_token.side_effect = ["<config_try_id>"]
     verifykey = b"0\xba\x9fY\xd1\xb4D\x93\r\xf6\xa7[\xe8\xaa\xf9\xeea\xb8\x01\x98\xc1~im}C\xfa\xde\\\xe6\xa1-"
-    cypherkey = b"\x8b\xfc\xc1\x88\xb7\xd7\x16t\xce<\x7f\xd2j_fTI\x14r':\rF!\xff~\xa8\r\x912\xe3N"
+    cipherkey = b"\x8b\xfc\xc1\x88\xb7\xd7\x16t\xce<\x7f\xd2j_fTI\x14r':\rF!\xff~\xa8\r\x912\xe3N"
 
     # 1) Existing device start listening for device configuration
 
@@ -78,7 +78,7 @@ async def test_device_configure(
             "device_name": "phone2",
             "configure_device_token": configure_device_token,
             "device_verify_key": to_jsonb64(verifykey),
-            "user_privkey_cypherkey": to_jsonb64(cypherkey),
+            "user_privkey_cipherkey": to_jsonb64(cipherkey),
         }
     )
 
@@ -99,7 +99,7 @@ async def test_device_configure(
     # 4) Existing device retreive configuration try informations
 
     await alice_sock.send(
-        {"cmd": "device_get_configuration_try", "configuration_try_id": "<config_try_id>"}
+        {"cmd": "device_get_configuration_try", "config_try_id": "<config_try_id>"}
     )
     rep = await alice_sock.recv()
     assert rep == {
@@ -107,19 +107,19 @@ async def test_device_configure(
         "configuration_status": "waiting_answer",
         "device_name": "phone2",
         "device_verify_key": "MLqfWdG0RJMN9qdb6Kr57mG4AZjBfmltfUP63lzmoS0=\n",
-        "user_privkey_cypherkey": "i/zBiLfXFnTOPH/Sal9mVEkUcic6DUYh/36oDZEy404=\n",
+        "user_privkey_cipherkey": "i/zBiLfXFnTOPH/Sal9mVEkUcic6DUYh/36oDZEy404=\n",
     }
-    user_privkey_cypherkey = PrivateKey(from_jsonb64(rep["user_privkey_cypherkey"]))
+    user_privkey_cipherkey = PrivateKey(from_jsonb64(rep["user_privkey_cipherkey"]))
 
     # 5) Existing device accept configuration
 
-    box = SealedBox(user_privkey_cypherkey)
-    cyphered_user_privkey = box.encrypt(alice.user_privkey.encode())
+    box = SealedBox(user_privkey_cipherkey)
+    ciphered_user_privkey = box.encrypt(alice.user_privkey.encode())
     await alice_sock.send(
         {
             "cmd": "device_accept_configuration_try",
-            "configuration_try_id": "<config_try_id>",
-            "cyphered_user_privkey": to_jsonb64(cyphered_user_privkey),
+            "config_try_id": "<config_try_id>",
+            "ciphered_user_privkey": to_jsonb64(ciphered_user_privkey),
         }
     )
     rep = await alice_sock.recv()
@@ -129,8 +129,8 @@ async def test_device_configure(
 
     rep = await anonymous_sock.recv()
     assert rep["status"] == "ok"
-    transmitted_cyphered_user_privkey = from_jsonb64(rep["cyphered_user_privkey"])
-    assert transmitted_cyphered_user_privkey == cyphered_user_privkey
+    transmitted_ciphered_user_privkey = from_jsonb64(rep["ciphered_user_privkey"])
+    assert transmitted_ciphered_user_privkey == ciphered_user_privkey
 
 
 @pytest.mark.trio
@@ -155,7 +155,7 @@ async def test_device_configure_and_get_refused(
             "device_name": "phone2",
             "configure_device_token": configure_device_token,
             "device_verify_key": to_jsonb64(b"<verifykey>"),
-            "user_privkey_cypherkey": to_jsonb64(b"<cypherkey>"),
+            "user_privkey_cipherkey": to_jsonb64(b"<cipherkey>"),
         }
     )
 
@@ -178,7 +178,7 @@ async def test_device_configure_and_get_refused(
     await alice_sock.send(
         {
             "cmd": "device_refuse_configuration_try",
-            "configuration_try_id": "<config_try_id>",
+            "config_try_id": "<config_try_id>",
             "reason": "Not in the mood.",
         }
     )
@@ -204,7 +204,7 @@ async def test_device_configure_timeout(anonymous_backend_sock, configure_device
             "device_name": "phone2",
             "configure_device_token": configure_device_token,
             "device_verify_key": to_jsonb64(b"<verifykey>"),
-            "user_privkey_cypherkey": to_jsonb64(b"<cypherkey>"),
+            "user_privkey_cipherkey": to_jsonb64(b"<cipherkey>"),
         }
     )
 
@@ -221,7 +221,7 @@ async def test_device_configure_timeout(anonymous_backend_sock, configure_device
 @pytest.mark.trio
 async def test_device_get_configuration_try_unknown(alice_backend_sock):
     await alice_backend_sock.send(
-        {"cmd": "device_get_configuration_try", "configuration_try_id": "<dummy>"}
+        {"cmd": "device_get_configuration_try", "config_try_id": "<dummy>"}
     )
     rep = await alice_backend_sock.recv()
     assert rep == {"status": "not_found", "reason": "Unknown device configuration try."}
@@ -232,8 +232,8 @@ async def test_device_accept_configuration_try_unknown(alice_backend_sock):
     await alice_backend_sock.send(
         {
             "cmd": "device_accept_configuration_try",
-            "configuration_try_id": "<dummy>",
-            "cyphered_user_privkey": to_jsonb64(b"whatever..."),
+            "config_try_id": "<dummy>",
+            "ciphered_user_privkey": to_jsonb64(b"whatever..."),
         }
     )
     rep = await alice_backend_sock.recv()
@@ -245,7 +245,7 @@ async def test_device_refuse_configuration_try_unknown(alice_backend_sock):
     await alice_backend_sock.send(
         {
             "cmd": "device_refuse_configuration_try",
-            "configuration_try_id": "<dummy>",
+            "config_try_id": "<dummy>",
             "reason": "Not in the mood.",
         }
     )

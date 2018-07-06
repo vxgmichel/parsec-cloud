@@ -15,7 +15,7 @@ from tests.common import connect_core, core_factory
             "password": "S3cr37",
             "configure_device_token": "123456",
         },
-        {"cmd": "device_accept_configuration_try", "configuration_try_id": "123456"},
+        {"cmd": "device_accept_configuration_try", "config_try_id": "123456"},
     ],
 )
 async def test_device_cmd_backend_offline(core, alice_core_sock, cmd):
@@ -69,14 +69,14 @@ async def test_device_declare_then_accepted(
             assert rep["status"] == "ok"
             assert rep["event"] == "device_try_claim_submitted"
             assert rep["device_name"] == "device2"
-            assert rep["configuration_try_id"]
+            assert rep["config_try_id"]
 
-            config_try_id = rep["configuration_try_id"]
+            config_try_id = rep["config_try_id"]
 
             # 4) Existing device accept configuration
 
             await alice_core_sock.send(
-                {"cmd": "device_accept_configuration_try", "configuration_try_id": config_try_id}
+                {"cmd": "device_accept_configuration_try", "config_try_id": config_try_id}
             )
             rep = await alice_core_sock.recv()
             assert rep == {"status": "ok"}

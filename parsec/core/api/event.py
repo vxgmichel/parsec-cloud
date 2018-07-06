@@ -17,7 +17,7 @@ class BackendGetConfigurationTrySchema(UnknownCheckedSchema):
     device_name = fields.String(required=True)
     configuration_status = fields.String(required=True)
     device_verify_key = fields.Base64Bytes(required=True)
-    user_privkey_cypherkey = fields.Base64Bytes(required=True)
+    user_privkey_cipherkey = fields.Base64Bytes(required=True)
 
 
 backend_get_configuration_try_schema = BackendGetConfigurationTrySchema()
@@ -55,11 +55,22 @@ async def event_subscribe(req: dict, client_ctx: ClientContext, core: Core) -> d
         }
 
     if event in ALLOWED_BACKEND_EVENTS:
-        try:
-            await core.backend_events_manager.subscribe_backend_event(event, subject)
-        except KeyError:
-            # Event already registered by another client context
-            pass
+        core.signal_ns.signal("backend.event.subscribe").send(
+            core.auth_device.id, event=event, subject=subject
+        )
+
+        backend_event_manager_restarted = trio.Event()
+
+        key = (event, subject)
+
+        def _on_backend_event_subscribed(sender, events):
+            if key in events:
+                backend_event_manager_restarted.set()
+
+        with core.signal_ns.signal("backend.event.subscribed").temporarily_connected_to(
+            _on_backend_event_subscribed
+        ):
+            await backend_event_manager_restarted.wait()
 
     return {"status": "ok"}
 
@@ -93,18 +104,19 @@ async def event_listen(req: dict, client_ctx: ClientContext, core: Core) -> dict
 
     msg = cmd_EVENT_LISTEN_Schema().load(req)
     if msg["wait"]:
-        event, subject = await client_ctx.received_signals.get()
+        event, subject, kwargs = await client_ctx.received_signals.get()
     else:
         try:
-            event, subject = client_ctx.received_signals.get_nowait()
+            event, subject, kwargs = client_ctx.received_signals.get_nowait()
         except trio.WouldBlock:
             return {"status": "ok"}
 
     # TODO: make more generic
     if event == "device_try_claim_submitted":
+        config_try_id = kwargs["config_try_id"]
         try:
             rep = await core.backend_connection.send(
-                {"cmd": "device_get_configuration_try", "configuration_try_id": subject}
+                {"cmd": "device_get_configuration_try", "config_try_id": config_try_id}
             )
         except BackendNotAvailable:
             return {"status": "backend_not_availabled", "reason": "Backend not available"}
@@ -116,15 +128,10 @@ async def event_listen(req: dict, client_ctx: ClientContext, core: Core) -> dict
                 "reason": "Bad response from backend: %r (%r)" % (rep, errors),
             }
 
-        return {
-            "status": "ok",
-            "event": event,
-            "device_name": rep["device_name"],
-            "configuration_try_id": subject,
-        }
+        return {"status": "ok", **kwargs}
 
     else:
-        return {"status": "ok", "event": event, "subject": subject}
+        return {"status": "ok", "event": event, "subject": subject, **kwargs}
 
 
 async def event_list_subscribed(req: dict, client_ctx: ClientContext, core: Core) -> dict:

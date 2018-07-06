@@ -1,8 +1,6 @@
 import os
 import re
 import logging
-import json
-import attr
 from nacl.public import PrivateKey
 from nacl.signing import SigningKey
 from nacl.pwhash import argon2i
@@ -52,11 +50,20 @@ class DeviceConfSchema(UnknownCheckedSchema):
     device_id = fields.String(validate=validate.Regexp(DEVICE_ID_PATTERN), required=True)
     user_privkey = fields.Base64Bytes(required=True)
     device_signkey = fields.Base64Bytes(required=True)
+    user_manifest_access = fields.Base64Bytes(required=True)
     encryption = fields.String(validate=validate.OneOf({"quedalle", "password"}), required=True)
     salt = fields.Base64Bytes()
 
 
+class UserManifestAccessSchema(UnknownCheckedSchema):
+    id = fields.String(required=True)
+    rts = fields.String(required=True)
+    wts = fields.String(required=True)
+    key = fields.Base64Bytes(required=True, validate=validate.Length(min=32, max=32))
+
+
 device_conf_schema = DeviceConfSchema()
+user_manifest_access_schema = UserManifestAccessSchema()
 
 
 def _secret_box_factory(password, salt):
@@ -140,14 +147,16 @@ class DevicesManager:
         except FileExistsError:
             pass
 
-    def register_new_device(self, device_id, user_privkey, device_signkey, password=None):
-        # TODO: add user_manifest_access
+    def register_new_device(
+        self, device_id, user_privkey, device_signkey, user_manifest_access, password=None
+    ):
         self._ensure_devices_conf_path_exists()
         device_conf_path = os.path.join(self.devices_conf_path, device_id)
         if os.path.exists(device_conf_path):
             raise DeviceSavingError("Device config %s already exists" % device_conf_path)
 
         os.mkdir(device_conf_path)
+        user_manifest_access_raw, _ = user_manifest_access_schema.dumps(user_manifest_access)
 
         device_conf = {"device_id": device_id}
         if password:
@@ -157,11 +166,13 @@ class DevicesManager:
             device_conf["encryption"] = "password"
             device_conf["device_signkey"] = box.encrypt(device_signkey)
             device_conf["user_privkey"] = box.encrypt(user_privkey)
+            device_conf["user_manifest_access"] = box.encrypt(user_manifest_access_raw.encode())
         else:
             device_conf["encryption"] = "quedalle"
             # Feel dirty just writting this...
             device_conf["device_signkey"] = device_signkey
             device_conf["user_privkey"] = user_privkey
+            device_conf["user_manifest_access"] = user_manifest_access_raw.encode()
 
         device_key_path = os.path.join(device_conf_path, "key.json")
         data, errors = device_conf_schema.dumps(device_conf)
@@ -195,7 +206,12 @@ class DevicesManager:
             try:
                 user_privkey = box.decrypt(device_conf["user_privkey"])
                 device_signkey = box.decrypt(device_conf["device_signkey"])
-                user_manifest_access = json.loads(box.decrypt(device_conf["user_manifest_access"]))
+                user_manifest_access_raw = box.decrypt(device_conf["user_manifest_access"]).decode()
+                user_manifest_access, errors = user_manifest_access_schema.loads(
+                    user_manifest_access_raw
+                )
+                # TODO: improve data validation
+                assert not errors
             except nacl.exceptions.CryptoError as exc:
                 raise DeviceLoadingError(
                     "Invalid %s device config: decryption key failure" % device_conf_path
@@ -210,7 +226,10 @@ class DevicesManager:
 
             user_privkey = device_conf["user_privkey"]
             device_signkey = device_conf["device_signkey"]
-            user_manifest_access = device_conf["user_manifest_access"]
+            user_manifest_access, errors = user_manifest_access_schema.loads(
+                device_conf["user_manifest_access"]
+            )
+            assert not errors
 
         return Device(
             id=device_id,

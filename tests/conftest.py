@@ -252,7 +252,11 @@ async def core(asyncio_loop, backend_addr, tmpdir, default_devices, config={}):
 
         for device in default_devices:
             core.devices_manager.register_new_device(
-                device.id, device.user_privkey.encode(), device.device_signkey.encode(), "<secret>"
+                device.id,
+                device.user_privkey.encode(),
+                device.device_signkey.encode(),
+                device.user_manifest_access,
+                "<secret>",
             )
 
         yield core
@@ -271,7 +275,11 @@ async def core2(asyncio_loop, backend_addr, tmpdir, default_devices, config={}):
 
         for device in default_devices:
             core.devices_manager.register_new_device(
-                device.id, device.user_privkey.encode(), device.device_signkey.encode(), "<secret>"
+                device.id,
+                device.user_privkey.encode(),
+                device.device_signkey.encode(),
+                device.user_manifest_access,
+                "<secret>",
             )
 
         yield core

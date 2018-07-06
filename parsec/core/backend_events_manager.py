@@ -17,9 +17,9 @@ logger = logbook.Logger("parsec.core.backend_events_manager")
 
 class BackendEventPingRepSchema(UnknownCheckedSchema):
     status = fields.CheckedConstant("ok", required=True)
+    subject = fields.String(required=True)
     sender = fields.String(required=True)
     event = fields.String(required=True)
-    msg = fields.String(missing=None)
 
 
 class BackendEventListenRepSchema(OneOfSchema):
@@ -185,4 +185,5 @@ class BackendEventsManager(BaseAsyncComponent):
 
                 rep.pop("status")
                 sender = rep.pop("sender")
+                assert sender != self.device.id
                 self.signal_ns.signal(rep["event"]).send(sender, **rep)

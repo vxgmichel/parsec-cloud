@@ -215,7 +215,7 @@ class BackendApp:
             subject = client_ctx.user_id
 
         def _handle_event(sender, **kwargs):
-            if sender == client_ctx.id or kwargs.get("subject") != subject:
+            if sender == client_ctx.id or kwargs["subject"] != subject:
                 return
             try:
                 client_ctx.events.put_nowait((sender, event, kwargs))

@@ -21,9 +21,9 @@ async def backend_event_manager(nursery, signal_ns, running_backend, alice):
         await em.teardown()
 
 
-async def subscribe_event(signal_ns, device, event):
-    signal_ns.signal("backend.event.subscribe").send(device.id, event=event)
-    await wait_event_subscribed(signal_ns, device, {(event, None)})
+async def subscribe_event(signal_ns, device, event="ping", subject="foo"):
+    signal_ns.signal("backend.event.subscribe").send(device.id, event=event, subject=subject)
+    await wait_event_subscribed(signal_ns, device, {(event, subject)})
 
 
 async def wait_event_subscribed(signal_ns, device, expected_events):
@@ -37,31 +37,31 @@ async def wait_event_subscribed(signal_ns, device, expected_events):
 async def test_subscribe_on_init(nursery, signal_ns, running_backend, alice):
     em = BackendEventsManager(alice, running_backend.addr, signal_ns)
 
-    signal_ns.signal("backend.event.subscribe").send(alice.id, event="ping")
+    signal_ns.signal("backend.event.subscribe").send(alice.id, event="ping", subject="foo")
 
     await em.init(nursery)
 
-    await wait_event_subscribed(signal_ns, alice, {("ping", None)})
+    await wait_event_subscribed(signal_ns, alice, {("ping", "foo")})
 
 
 @pytest.mark.trio
 async def test_subscribe_event(signal_ns, running_backend, alice, backend_event_manager):
-    await subscribe_event(signal_ns, alice, "ping")
+    await subscribe_event(signal_ns, alice)
 
     ping_received = connect_signal_as_event(signal_ns, "ping")
 
-    running_backend.backend.signal_ns.signal("ping").send("bob@test", msg="hello from bob")
+    running_backend.backend.signal_ns.signal("ping").send("bob@test", subject="foo")
 
     with trio.fail_after(1.0):
         await ping_received.wait()
-    ping_received.cb.assert_called_with("bob@test", event="ping", msg="hello from bob")
+    ping_received.cb.assert_called_with("bob@test", event="ping", subject="foo")
 
 
 @pytest.mark.trio
 async def test_unsbuscribe_event(signal_ns, running_backend, alice, backend_event_manager):
-    await subscribe_event(signal_ns, alice, "ping")
+    await subscribe_event(signal_ns, alice)
 
-    signal_ns.signal("backend.event.unsubscribe").send(alice.id, event="ping")
+    signal_ns.signal("backend.event.unsubscribe").send(alice.id, event="ping", subject="foo")
 
     await wait_event_subscribed(signal_ns, alice, set())
 
@@ -70,7 +70,7 @@ async def test_unsbuscribe_event(signal_ns, running_backend, alice, backend_even
 
     signal_ns.signal("ping").connect(on_ping)
 
-    running_backend.backend.signal_ns.signal("ping").send("bob@test", msg="hello from bob")
+    running_backend.backend.signal_ns.signal("ping").send("bob@test", subject="foo")
 
     # Nothing occured ? Then we're good !
     await wait_all_tasks_blocked(cushion=0.01)
@@ -91,13 +91,13 @@ async def test_unsubscribe_unknown_event_does_nothing(signal_ns, alice, backend_
 async def test_subscribe_already_subscribed_event_does_nothing(
     signal_ns, alice, backend_event_manager
 ):
-    await subscribe_event(signal_ns, alice, "ping")
+    await subscribe_event(signal_ns, alice)
 
     # Second subscribe is useless, event listener shouldn't be restarted
 
     event_subscribed = connect_signal_as_event(signal_ns, "backend.event.subscribed")
 
-    signal_ns.signal("backend.event.subscribe").send(alice.id, event="ping")
+    signal_ns.signal("backend.event.subscribe").send(alice.id, event="ping", subject="foo")
 
     await wait_all_tasks_blocked(cushion=0.01)
 
@@ -110,7 +110,7 @@ async def test_backend_switch_offline(
 ):
     mock_clock.rate = 1.0
 
-    await subscribe_event(signal_ns, alice, "ping")
+    await subscribe_event(signal_ns, alice)
 
     backend_offline = connect_signal_as_event(signal_ns, "backend.offline")
 
@@ -129,7 +129,7 @@ async def test_backend_switch_offline(
 
     # Make sure event system still works as expected
     ping_received = connect_signal_as_event(signal_ns, "ping")
-    running_backend.backend.signal_ns.signal("ping").send("bob@test", msg="hello from bob")
+    running_backend.backend.signal_ns.signal("ping").send("bob@test", subject="foo")
     with trio.fail_after(1.0):
         await ping_received.wait()
-    ping_received.cb.assert_called_with("bob@test", event="ping", msg="hello from bob")
+    ping_received.cb.assert_called_with("bob@test", event="ping", subject="foo")

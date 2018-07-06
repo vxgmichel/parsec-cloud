@@ -1,7 +1,6 @@
 import trio
 from trio.hazmat import current_clock
 
-from parsec.signals import get_signal
 from parsec.core.backend_connection import BackendNotAvailable
 
 
@@ -15,12 +14,13 @@ def timestamp():
 
 
 class SyncMonitor:
-    def __init__(self, local_manifest_fs, syncer):
+    def __init__(self, local_manifest_fs, syncer, signal_ns):
         self._local_manifest_fs = local_manifest_fs
         self._syncer = syncer
         self._task_cancel_scope = None
         self._updated_entries = {}
         self._new_event = trio.Event()
+        self.signal_ns = signal_ns
 
     async def init(self, nursery):
         self._task_cancel_scope = await nursery.start(self._task)
@@ -34,13 +34,13 @@ class SyncMonitor:
         def _on_backend_online(*args):
             backend_online_event.set()
 
-        get_signal("backend.online").connect(_on_backend_online, weak=True)
+        self.signal_ns.signal("backend.online").connect(_on_backend_online, weak=True)
 
         def _on_backend_offline(*args):
             backend_online_event.clear()
             event_listener_scope.cancel()
 
-        get_signal("backend.offline").connect(_on_backend_offline, weak=True)
+        self.signal_ns.signal("backend.offline").connect(_on_backend_offline, weak=True)
 
         async with trio.open_nursery() as nursery:
             task_status.started(nursery.cancel_scope)
@@ -67,7 +67,7 @@ class SyncMonitor:
             updated_entries[id] = (first_updated, last_updated)
             new_event.set()
 
-        get_signal("fs.entry.updated").connect(_on_entry_updated, weak=True)
+        self.signal_ns.signal("fs.entry.updated").connect(_on_entry_updated, weak=True)
 
         async with trio.open_nursery() as nursery:
             while True:

@@ -1,8 +1,6 @@
 import trio
 import pickle
 
-from parsec.signals import get_signal
-
 try:
     from parsec.utils import sym_decrypt, verify
 except ImportError:
@@ -19,11 +17,12 @@ except ImportError:
 
 
 class BeaconMonitor:
-    def __init__(self, device, local_db):
+    def __init__(self, device, local_db, signal_ns):
         self._device = device
         self._local_db = local_db
         self._task_cancel_scope = None
         self._workspaces = {}
+        self.signal_ns = signal_ns
 
     async def init(self, nursery):
         self._task_cancel_scope = await nursery.start(self._task)
@@ -47,7 +46,7 @@ class BeaconMonitor:
         def _on_workspace_unloaded(sender, path, beacon_id):
             del self._workspaces[beacon_id]
 
-        entry_updated_signal = get_signal("fs.entry.updated")
+        entry_updated_signal = self.signal_ns.signal("fs.entry.updated")
 
         def _on_beacon_updated(sender, id, msg, author, date):
             if author == self._device.device_id:
@@ -66,9 +65,9 @@ class BeaconMonitor:
 
             entry_updated_signal.send(id=msg["id"])
 
-        get_signal("fs.workspace.loaded").connect(_on_workspace_loaded, weak=True)
-        get_signal("fs.workspace.unloaded").connect(_on_workspace_unloaded, weak=True)
-        get_signal("backend.beacon.updated").connect(_on_beacon_updated, weak=True)
+        self.signal_ns.signal("fs.workspace.loaded").connect(_on_workspace_loaded, weak=True)
+        self.signal_ns.signal("fs.workspace.unloaded").connect(_on_workspace_unloaded, weak=True)
+        self.signal_ns.signal("backend.beacon.updated").connect(_on_beacon_updated, weak=True)
 
         with trio.open_cancel_scope() as cancel_scope:
             task_status.started(cancel_scope)

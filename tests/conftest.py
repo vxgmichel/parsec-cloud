@@ -8,9 +8,9 @@ import contextlib
 from unittest.mock import patch
 import hypothesis
 
-from parsec.signals import SignalsContext
 from parsec.backend.exceptions import AlreadyExistsError as UserAlreadyExistsError
 from parsec.backend.drivers import postgresql as pg_driver
+from parsec.signals import Namespace as SignalNamespace
 
 from tests.common import (
     freeze_time,
@@ -28,9 +28,7 @@ from tests.open_tcp_stream_mock_wrapper import OpenTCPStreamMockWrapper
 def pytest_addoption(parser):
     parser.addoption("--hypothesis-max-examples", default=100, type=int)
     parser.addoption("--hypothesis-derandomize", action="store_true")
-    parser.addoption(
-        "--no-postgresql", action="store_true", help="Don't run tests making use of PostgreSQL"
-    )
+    parser.addoption("--postgresql", action="store_true", help="Run tests making use of PostgreSQL")
     parser.addoption(
         "--only-postgresql", action="store_true", help="Only run tests making use of PostgreSQL"
     )
@@ -67,8 +65,8 @@ def get_postgresql_url():
 
 @pytest.fixture
 def postgresql_url(request):
-    if pytest.config.getoption("--no-postgresql"):
-        pytest.skip("`--no-postgresql` option provided")
+    if not pytest.config.getoption("--postgresql"):
+        pytest.skip("`--postgresql` option not provided")
     return get_postgresql_url()
 
 
@@ -81,8 +79,8 @@ async def asyncio_loop():
 @pytest.fixture(params=["mocked", "postgresql"])
 async def backend_store(request, asyncio_loop):
     if request.param == "postgresql":
-        if pytest.config.getoption("--no-postgresql"):
-            pytest.skip("`--no-postgresql` option provided")
+        if not pytest.config.getoption("--postgresql"):
+            pytest.skip("`--postgresql` option not provided")
         url = get_postgresql_url()
         try:
             await pg_driver.handler.init_db(url, True)
@@ -151,33 +149,9 @@ def unused_tcp_addr(unused_tcp_port):
     return "tcp://127.0.0.1:%s" % unused_tcp_port
 
 
-@pytest.fixture(autouse=True)
-def magical_per_app_signals_context():
-    """
-    SignalsContext is supposed to be used per-coroutine
-    """
-    import inspect
-    import parsec.signals
-
-    vanilla_signals_namespace_get = parsec.signals._signals_namespace.get
-
-    def _signals_namespace_get():
-        for stack_item in inspect.stack():
-            sctx = getattr(stack_item.frame.f_locals.get("self"), "signals_context", None)
-            if sctx:
-                return sctx.signals_namespace
-        else:
-            return vanilla_signals_namespace_get()
-
-    with patch("parsec.signals._signals_namespace.get", new=_signals_namespace_get):
-        yield
-
-
 @pytest.fixture
 def signal_ns():
-    with SignalsContext() as ctx:
-        ctx.signals_namespace
-        yield ctx.signals_namespace
+    return SignalNamespace()
 
 
 @pytest.fixture
@@ -261,8 +235,9 @@ async def bob_backend_sock(backend, bob):
 
 
 @pytest.fixture
-def core_signal_ns(core):
-    return core.signals_context.signals_namespace
+async def anonymous_backend_sock(backend):
+    async with connect_backend(backend, auth_as="anonymous") as sock:
+        yield sock
 
 
 @pytest.fixture

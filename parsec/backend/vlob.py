@@ -3,7 +3,7 @@ import random
 import string
 
 from parsec.utils import to_jsonb64
-from parsec.schema import BaseCmdSchema, UnknownCheckedSchema, fields
+from parsec.schema import BaseCmdSchema, UnknownCheckedSchema, fields, validate
 
 
 TRUST_SEED_LENGTH = 12
@@ -38,7 +38,7 @@ class cmd_GROUP_CHECK_Schema(BaseCmdSchema):
 
 
 class cmd_CREATE_Schema(BaseCmdSchema):
-    id = fields.String(required=True)
+    id = fields.String(required=True, validate=validate.Length(min=1, max=32))
     rts = fields.String(required=True)
     wts = fields.String(required=True)
     blob = fields.Base64Bytes(required=True)
@@ -60,9 +60,6 @@ class cmd_UPDATE_Schema(BaseCmdSchema):
 
 
 class BaseVlobComponent:
-    def __init__(self, signal_ns):
-        self._signal_vlob_updated = signal_ns.signal("vlob_updated")
-
     async def api_vlob_group_check(self, client_ctx, msg):
         msg = cmd_GROUP_CHECK_Schema().load_or_abort(msg)
         changed = await self.group_check(**msg)
@@ -70,7 +67,7 @@ class BaseVlobComponent:
 
     async def api_vlob_create(self, client_ctx, msg):
         msg = cmd_CREATE_Schema().load_or_abort(msg)
-        await self.create(**msg)
+        await self.create(**msg, author=client_ctx.id)
         return {"status": "ok"}
 
     async def api_vlob_read(self, client_ctx, msg):
@@ -85,17 +82,17 @@ class BaseVlobComponent:
 
     async def api_vlob_update(self, client_ctx, msg):
         msg = cmd_UPDATE_Schema().load_or_abort(msg)
-        await self.update(**msg)
+        await self.update(**msg, author=client_ctx.id)
         return {"status": "ok"}
 
     async def group_check(self, to_check):
         raise NotImplementedError()
 
-    async def create(self, id, rts, wts, blob, notify_beacons=()):
+    async def create(self, id, rts, wts, blob, notify_beacons=(), author="anonymous"):
         raise NotImplementedError()
 
     async def read(self, id, rts, version=None):
         raise NotImplementedError()
 
-    async def update(self, id, wts, version, blob, notify_beacons=()):
+    async def update(self, id, wts, version, blob, notify_beacons=(), author="anonymous"):
         raise NotImplementedError()

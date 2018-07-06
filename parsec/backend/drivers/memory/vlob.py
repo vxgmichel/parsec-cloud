@@ -13,8 +13,8 @@ class MemoryVlob:
 
 
 class MemoryVlobComponent(BaseVlobComponent):
-    def __init__(self, *args):
-        super().__init__(*args)
+    def __init__(self, signal_ns):
+        self._signal_vlob_updated = signal_ns.signal("vlob_updated")
         self.vlobs = {}
 
     async def group_check(self, to_check):
@@ -31,7 +31,7 @@ class MemoryVlobComponent(BaseVlobComponent):
                     changed.append({"id": id, "version": vlob.version})
         return changed
 
-    async def create(self, id, rts, wts, blob, notify_beacons=()):
+    async def create(self, id, rts, wts, blob, notify_beacons=(), author="anonymous"):
         # TODO
         # for beacon_id in notify_beacons:
         #     await self._update_sink_vlob(beacon_id, id.encode("utf-8"))
@@ -44,6 +44,8 @@ class MemoryVlobComponent(BaseVlobComponent):
             write_trust_seed=vlob.write_trust_seed,
             blob=vlob.blob_versions[0],
         )
+
+        self._signal_vlob_updated.send(author, subject=id)
 
     async def read(self, id, rts, version=None):
         try:
@@ -67,7 +69,7 @@ class MemoryVlobComponent(BaseVlobComponent):
         except IndexError:
             raise VersionError("Wrong blob version.")
 
-    async def update(self, id, wts, version, blob, notify_beacons=()):
+    async def update(self, id, wts, version, blob, notify_beacons=(), author="anonymous"):
         try:
             vlob = self.vlobs[id]
             if vlob.write_trust_seed != wts:
@@ -81,21 +83,21 @@ class MemoryVlobComponent(BaseVlobComponent):
         else:
             raise VersionError("Wrong blob version.")
 
-        self._signal_vlob_updated.send(id)
+        self._signal_vlob_updated.send(author, subject=id)
         # TODO
         # for sink_id in notify_sinks:
         #     await self._update_sink_vlob(sink_id, id.encode("utf-8"))
 
-    async def _update_sink_vlob(self, sink_id, data):
-        try:
-            vlob = self.vlobs[sink_id]
-            if not vlob.is_sink:
-                raise ParsecError("not_a_sink", "Not a sink vlob")
-            vlob.blob_versions.append(data)
+    # async def _notify_beacons(self, sink_id, data):
+    #     try:
+    #         vlob = self.vlobs[sink_id]
+    #         if not vlob.is_sink:
+    #             raise ParsecError("not_a_sink", "Not a sink vlob")
+    #         vlob.blob_versions.append(data)
 
-        except KeyError:
-            self.vlobs[sink_id] = MemoryVlob(
-                id=sink_id, read_trust_seed=sink_id, blob=data, is_sink=True
-            )
+    #     except KeyError:
+    #         self.vlobs[sink_id] = MemoryVlob(
+    #             id=sink_id, read_trust_seed=sink_id, blob=data, is_sink=True
+    #         )
 
-        self._signal_vlob_updated.send(sink_id)
+    #     self._signal_vlob_updated.send(author, subject=sink_id)

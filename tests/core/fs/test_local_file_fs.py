@@ -13,7 +13,7 @@ from tests.common import freeze_time, bootstrap_device
 
 @pytest.fixture
 def local_file_fs(alice, signal_ns):
-    return LocalFileFS(alice)
+    return LocalFileFS(alice, signal_ns)
 
 
 class File:
@@ -167,7 +167,7 @@ def test_file_operations(tmpdir, signal_ns, hypothesis_settings):
             tentative += 1
 
             self.device = bootstrap_device("alice", "dev1")
-            self.local_file_fs = LocalFileFS(self.device)
+            self.local_file_fs = LocalFileFS(self.device, signal_ns)
             self.access = new_access()
             manifest = new_local_file_manifest(self.device.id)
             self.device.local_db.set(self.access, manifest)

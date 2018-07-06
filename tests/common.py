@@ -7,7 +7,6 @@ from copy import deepcopy
 from nacl.public import PrivateKey
 from nacl.signing import SigningKey
 
-from parsec.signals import get_signal
 from parsec.core import Core, CoreConfig
 from parsec.core.fs.data import new_access, new_workspace_manifest, remote_to_local_manifest
 from parsec.core.devices_manager import Device
@@ -164,7 +163,7 @@ async def core_factory(**config):
 
 
 def bootstrap_device(user_id, device_name):
-    return bootstrap_devices(user_id, (device_name))[0]
+    return bootstrap_devices(user_id, (device_name,))[0]
 
 
 def bootstrap_devices(user_id, devices_names):
@@ -192,15 +191,11 @@ def bootstrap_devices(user_id, devices_names):
     return devices
 
 
-def connect_signal_as_event(signal_name, signal_ns=None):
+def connect_signal_as_event(signal_ns, signal_name):
     event = trio.Event()
     callback = Mock(spec_set=())
     callback.side_effect = lambda *args, **kwargs: event.set()
 
     event.cb = callback  # Prevent weakref destruction
-    if not signal_ns:
-        signal = get_signal(signal_name)
-    else:
-        signal = signal_ns.signal(signal_name)
-    signal.connect(callback)
+    signal_ns.signal(signal_name).connect(callback, weak=True)
     return event

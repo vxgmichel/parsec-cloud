@@ -2,7 +2,6 @@ import trio
 import json
 import logbook
 
-from parsec.signals import get_signal
 from parsec.core.base import BaseAsyncComponent
 from parsec.core.backend_connection import BackendError
 
@@ -11,18 +10,19 @@ logger = logbook.Logger("parsec.core.remote_listener")
 
 
 class RemoteListener(BaseAsyncComponent):
-    def __init__(self, device, backend_connection, backend_event_manager):
+    def __init__(self, device, backend_connection, backend_event_manager, signal_ns):
         super().__init__()
         self._device = device
         self._backend_connection = backend_connection
         self._backend_event_manager = backend_event_manager
+        self.signal_ns = signal_ns
         self._new_notify_sinks = trio.Queue(100)
         self._notify_sink_updated = trio.Queue(100)
         self._new_notify_sink_task_info = None
         self._notify_sink_updated_task_info = None
 
     async def _init(self, nursery):
-        get_signal("fs_local_notify_sink_loaded").connect(
+        self.signal_ns.signal("fs_local_notify_sink_loaded").connect(
             self._on_fs_local_notify_sink_loaded, weak=True
         )
         self._new_notify_sink_task_info = await nursery.start(self._new_notify_sink_task)
@@ -72,7 +72,7 @@ class RemoteListener(BaseAsyncComponent):
                     data = json.loads(rep["blob"].decode("utf-8"))
                     if data["author"] != self._device.device_id:
                         # TODO: we should only re-sync what's needed
-                        get_signal("fs_entry_updated").send(self, "/")
+                        self.signal_ns.signal("fs_entry_updated").send(self, "/")
 
         finally:
             closed_event.set()

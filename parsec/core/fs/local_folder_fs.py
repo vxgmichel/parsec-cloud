@@ -1,6 +1,5 @@
 import pendulum
 
-from parsec.signals import get_signal
 from parsec.core.local_db import LocalDBMissingEntry
 from parsec.core.fs.data import (
     is_file_manifest,
@@ -32,10 +31,11 @@ class FSManifestLocalMiss(Exception):
 
 
 class LocalFolderFS:
-    def __init__(self, device):
+    def __init__(self, device, signal_ns):
         self.local_author = device.user_id
         self.root_access = device.user_manifest_access
         self._local_db = device.local_db
+        self.signal_ns = signal_ns
 
         # Sanity check
         try:
@@ -184,8 +184,8 @@ class LocalFolderFS:
         mark_manifest_modified(manifest)
         self._local_db.set(access, manifest)
         self._local_db.set(child_access, child_manifest)
-        get_signal("fs.entry.modified").send("local", id=access["id"])
-        get_signal("fs.entry.created").send("local", id=child_access["id"])
+        self.signal_ns.signal("fs.entry.modified").send("local", id=access["id"])
+        self.signal_ns.signal("fs.entry.created").send("local", id=child_access["id"])
 
     def mkdir(self, path):
         path = normalize_path(path)
@@ -202,8 +202,8 @@ class LocalFolderFS:
         mark_manifest_modified(manifest)
         self._local_db.set(access, manifest)
         self._local_db.set(child_access, child_manifest)
-        get_signal("fs.entry.modified").send("local", id=access["id"])
-        get_signal("fs.entry.created").send("local", id=child_access["id"])
+        self.signal_ns.signal("fs.entry.modified").send("local", id=access["id"])
+        self.signal_ns.signal("fs.entry.created").send("local", id=child_access["id"])
 
     def _delete(self, path, expect=None):
         path = normalize_path(path)
@@ -229,7 +229,7 @@ class LocalFolderFS:
             raise NotADirectoryError(20, "Not a directory", path)
 
         self._local_db.set(parent_access, parent_manifest)
-        get_signal("fs.entry.modified").send("local", id=parent_access["id"])
+        self.signal_ns.signal("fs.entry.modified").send("local", id=parent_access["id"])
 
     def delete(self, path):
         self._delete(path)
@@ -243,9 +243,6 @@ class LocalFolderFS:
     def move(self, src, dst):
         src = normalize_path(src)
         dst = normalize_path(dst)
-
-        if src == dst:
-            return
 
         parent_src, child_src = src.rsplit("/", 1)
         parent_dst, child_dst = dst.rsplit("/", 1)
@@ -265,6 +262,9 @@ class LocalFolderFS:
             except KeyError:
                 raise FileNotFoundError(2, "No such file or directory", src)
 
+            if src == dst:
+                return
+
             existing_entry_access = parent_manifest["children"].get(child_dst)
             if existing_entry_access:
                 existing_entry_manifest = self._local_db.get(existing_entry_access)
@@ -275,7 +275,7 @@ class LocalFolderFS:
             mark_manifest_modified(parent_manifest)
 
             self._local_db.set(parent_access, parent_manifest)
-            get_signal("fs.entry.modified").send("local", id=parent_access["id"])
+            self.signal_ns.signal("fs.entry.modified").send("local", id=parent_access["id"])
 
         else:
             parent_src_access, parent_src_manifest = self._retrieve_entry(parent_src)
@@ -308,5 +308,5 @@ class LocalFolderFS:
             self._local_db.set(parent_src_access, parent_src_manifest)
             self._local_db.set(parent_dst_access, parent_dst_manifest)
 
-            get_signal("fs.entry.modified").send("local", id=parent_src_access["id"])
-            get_signal("fs.entry.modified").send("local", id=parent_dst_access["id"])
+            self.signal_ns.signal("fs.entry.modified").send("local", id=parent_src_access["id"])
+            self.signal_ns.signal("fs.entry.modified").send("local", id=parent_dst_access["id"])

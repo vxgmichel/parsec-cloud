@@ -124,17 +124,15 @@ class BaseUserComponent:
     async def api_device_configure(self, client_ctx, msg):
         msg = DeviceConfigureSchema().load_or_abort(msg)
         user_id = msg["user_id"]
+        device_name = msg["device_name"]
         try:
             user = await self.get(user_id)
         except NotFoundError:
             return {"status": "not_found", "reason": "No user with id `%s`." % msg["user_id"]}
 
-        device = user["devices"].get(msg["device_name"])
+        device = user["devices"].get(device_name)
         if not device:
-            return {
-                "status": "not_found",
-                "reason": "Device `%s` doesn't exists." % msg["device_name"],
-            }
+            return {"status": "not_found", "reason": "Device `%s` doesn't exists." % device_name}
 
         if device["configure_token"] != msg["configure_device_token"]:
             return {"status": "invalid_token", "reason": "Wrong device configuration token."}
@@ -143,20 +141,21 @@ class BaseUserComponent:
         await self.register_device_configuration_try(
             config_try_id,
             user_id,
-            msg["device_name"],
+            device_name,
             msg["device_verify_key"],
             msg["user_privkey_cypherkey"],
         )
 
         claim_answered = trio.Event()
 
-        def _on_claim_answered(sender):
-            claim_answered.set()
+        def _on_claim_answered(sender, **kwargs):
+            if kwargs["subject"] == user_id and kwargs["config_try_id"] == config_try_id:
+                claim_answered.set()
 
-        with self._signal_device_try_claim_answered.temporarily_connected_to(
-            _on_claim_answered, sender=config_try_id
-        ):
-            self._signal_device_try_claim_submitted.send(config_try_id)
+        with self._signal_device_try_claim_answered.temporarily_connected_to(_on_claim_answered):
+            self._signal_device_try_claim_submitted.send(
+                client_ctx.id, subject=user_id, device_name=device_name, config_try_id=config_try_id
+            )
             with trio.move_on_after(5 * 60) as cancel_scope:
                 await claim_answered.wait()
             if cancel_scope.cancelled_caught:
@@ -174,7 +173,7 @@ class BaseUserComponent:
         if config_try["status"] != "accepted":
             return {"status": "configuration_refused", "reason": config_try["refused_reason"]}
 
-        await self.configure_device(user_id, msg["device_name"], msg["device_verify_key"])
+        await self.configure_device(user_id, device_name, msg["device_verify_key"])
 
         return {
             "status": "ok",
@@ -210,7 +209,9 @@ class BaseUserComponent:
         except AlreadyExistsError:
             return {"status": "already_done", "reason": "Device configuration try already done."}
 
-        self._signal_device_try_claim_answered.send(msg["configuration_try_id"])
+        self._signal_device_try_claim_answered.send(
+            client_ctx.id, subject=client_ctx.user_id, config_try_id=msg["configuration_try_id"]
+        )
         return {"status": "ok"}
 
     async def api_device_refuse_configuration_try(self, client_ctx, msg):
@@ -225,7 +226,9 @@ class BaseUserComponent:
         except AlreadyExistsError:
             return {"status": "already_done", "reason": "Device configuration try already done."}
 
-        self._signal_device_try_claim_answered.send(msg["configuration_try_id"])
+        self._signal_device_try_claim_answered.send(
+            client_ctx.id, subject=client_ctx.user_id, config_try_id=msg["configuration_try_id"]
+        )
         return {"status": "ok"}
 
     async def claim_invitation(

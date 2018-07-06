@@ -18,18 +18,18 @@ from parsec.core.fs.data import (
     remote_to_local_manifest,
     local_to_remote_manifest,
 )
-from parsec.signals import get_signal
 from parsec.core.fs.local_folder_fs import FSManifestLocalMiss
 from parsec.core.local_db import LocalDBMissingEntry
 from parsec.utils import to_jsonb64
 
 
 class Syncer:
-    def __init__(self, device, backend_conn, local_manifest_fs):
+    def __init__(self, device, backend_conn, local_manifest_fs, signal_ns):
         self._lock = trio.Lock()
         self.device = device
         self._backend_conn = backend_conn
         self._local_manifest_fs = local_manifest_fs
+        self.signal_ns = signal_ns
 
     def _build_beacon_messages(self, notify, msg):
         raw_msg = pickle.dumps(msg)
@@ -127,7 +127,7 @@ class Syncer:
         if is_file_manifest(manifest):
             if not manifest["need_sync"]:
                 self._local_manifest_fs.mark_outdated_manifest(access)
-                get_signal("fs.entry.synced").send("local", id=access["id"])
+                self.signal_ns.signal("fs.entry.synced").send("local", id=access["id"])
                 return
 
             for db_access in manifest["dirty_blocks"]:
@@ -178,7 +178,7 @@ class Syncer:
 
             if not manifest["need_sync"]:
                 self._local_manifest_fs.mark_outdated_manifest(access)
-                get_signal("fs.entry.synced").send("local", id=access["id"])
+                self.signal_ns.signal("fs.entry.synced").send("local", id=access["id"])
                 return
 
             remote_manifest = local_to_remote_manifest(manifest)
@@ -204,4 +204,4 @@ class Syncer:
             updated_manifest = remote_to_local_manifest(remote_manifest)
             self._local_manifest_fs.set_manifest(access, updated_manifest)
 
-        get_signal("fs.entry.synced").send("local", id=access["id"])
+        self.signal_ns.signal("fs.entry.synced").send("local", id=access["id"])

@@ -2,7 +2,6 @@ import attr
 from typing import NewType
 from math import inf
 
-from parsec.signals import get_signal
 from parsec.core.local_db import LocalDBMissingEntry
 from parsec.core.fs.data import is_file_manifest, new_access
 from parsec.core.fs.buffer_ordering import (
@@ -79,7 +78,8 @@ class FSInvalidFileDescriptor(Exception):
 
 
 class LocalFileFS:
-    def __init__(self, device):
+    def __init__(self, device, signal_ns):
+        self.signal_ns = signal_ns
         self._local_db = device.local_db
         self._opened_cursors = {}
         self._hot_files = {}
@@ -266,4 +266,4 @@ class LocalFileFS:
         self._local_db.set(cursor.access, manifest)
 
         hf.pending_writes.clear()
-        get_signal("fs.entry.modified").send("local", id=cursor.access["id"])
+        self.signal_ns.signal("fs.entry.modified").send("local", id=cursor.access["id"])

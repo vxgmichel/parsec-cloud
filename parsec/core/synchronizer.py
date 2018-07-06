@@ -3,7 +3,6 @@ import logbook
 import traceback
 import pendulum
 
-from parsec.signals import get_signal
 from parsec.core.base import BaseAsyncComponent
 from parsec.core.backend_connection import BackendNotAvailable, BackendError
 from parsec.core.fs.utils import FSInvalidPath
@@ -18,10 +17,11 @@ MAX_WAIT = pendulum.interval(seconds=60)
 
 
 class Synchronizer(BaseAsyncComponent):
-    def __init__(self, auto_sync, fs):
+    def __init__(self, auto_sync, fs, signal_ns):
         super().__init__()
         self.auto_sync = auto_sync
         self.fs = fs
+        self.signal_ns = signal_ns
         self._synchronizer_task_info = None
         self._sync_candidates_journal = []
 
@@ -44,7 +44,7 @@ class Synchronizer(BaseAsyncComponent):
             self._sync_candidates_journal.append((pendulum.now(), path))
             candidates_updated.set()
 
-        get_signal("fs_entry_updated").connect(_on_entry_updated, weak=True)
+        self.signal_ns.signal("fs_entry_updated").connect(_on_entry_updated, weak=True)
 
         with trio.open_cancel_scope() as cancel_scope:
             task_status.started(cancel_scope)

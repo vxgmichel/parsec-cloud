@@ -2,7 +2,6 @@ import trio
 import logbook
 import json
 
-from parsec.signals import get_signal
 from parsec.schema import UnknownCheckedSchema, OneOfSchema, fields
 from parsec.core.base import BaseAsyncComponent
 from parsec.core.devices_manager import Device
@@ -50,17 +49,22 @@ class BackendEventsManager(BaseAsyncComponent):
     - events are message sent downstream from the backend to the client core
     """
 
-    def __init__(self, device: Device, backend_addr: str):
+    def __init__(self, device: Device, backend_addr: str, signal_ns):
         super().__init__()
         self.device = device
         self.backend_addr = backend_addr
+        self.signal_ns = signal_ns
         self._nursery = None
         self._backend_offline = True
         self._subscribed_events = set()
         self._subscribed_events_changed = trio.Event()
         self._task_info = None
-        get_signal("backend.event.subscribe").connect(self._on_event_subscribe, weak=True)
-        get_signal("backend.event.unsubscribe").connect(self._on_event_unsubscribe, weak=True)
+        self.signal_ns.signal("backend.event.subscribe").connect(
+            self._on_event_subscribe, weak=True
+        )
+        self.signal_ns.signal("backend.event.unsubscribe").connect(
+            self._on_event_unsubscribe, weak=True
+        )
 
     def _on_event_subscribe(self, sender, event, subject=None):
         assert sender == self.device.id
@@ -96,13 +100,15 @@ class BackendEventsManager(BaseAsyncComponent):
 
     def _event_pump_lost(self):
         self._backend_offline = True
-        get_signal("backend.offline").send(self.device.id)
+        self.signal_ns.signal("backend.offline").send(self.device.id)
 
     def _event_pump_ready(self):
         if self._backend_offline:
             self._backend_offline = False
-            get_signal("backend.online").send(self.device.id)
-        get_signal("backend.event.subscribed").send(self.device.id, events=self._subscribed_events)
+            self.signal_ns.signal("backend.online").send(self.device.id)
+        self.signal_ns.signal("backend.event.subscribed").send(
+            self.device.id, events=self._subscribed_events
+        )
 
     async def _task(self, *, task_status=trio.TASK_STATUS_IGNORED):
         closed_event = trio.Event()
@@ -149,7 +155,7 @@ class BackendEventsManager(BaseAsyncComponent):
                 # trouble...
                 # TODO: think about this kind of signal format
                 self._event_pump_lost()
-                get_signal("panic").send(exc)
+                self.signal_ns.signal("panic").send(exc)
 
     async def _event_pump(self, *, task_status=trio.TASK_STATUS_IGNORED):
         with trio.open_cancel_scope() as cancel_scope:
@@ -179,4 +185,4 @@ class BackendEventsManager(BaseAsyncComponent):
 
                 rep.pop("status")
                 sender = rep.pop("sender")
-                get_signal(rep["event"]).send(sender, **rep)
+                self.signal_ns.signal(rep["event"]).send(sender, **rep)

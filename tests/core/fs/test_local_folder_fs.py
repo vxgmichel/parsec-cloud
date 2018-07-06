@@ -21,7 +21,7 @@ from tests.common import freeze_time, bootstrap_device
 
 @pytest.fixture
 def local_folder_fs(alice, signal_ns):
-    return LocalFolderFS(alice)
+    return LocalFolderFS(alice, signal_ns)
 
 
 def test_stat_root(local_folder_fs):
@@ -150,7 +150,7 @@ def test_folder_operations(tmpdir, signal_ns, hypothesis_settings):
             tentative += 1
 
             self.device = bootstrap_device("alice", "dev1")
-            self.local_folder_fs = LocalFolderFS(self.device)
+            self.local_folder_fs = LocalFolderFS(self.device, signal_ns)
             self.folder_oracle = Path(tmpdir / f"oracle-test-{tentative}")
             self.folder_oracle.mkdir()
             oracle_root = self.folder_oracle / "root"

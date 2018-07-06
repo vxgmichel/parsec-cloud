@@ -1,12 +1,12 @@
 import attr
 import trio
-import blinker
 import logbook
 import traceback
 from nacl.public import PublicKey
 from nacl.signing import VerifyKey
 from json import JSONDecodeError
 
+from parsec.signals import Namespace as SignalNamespace
 from parsec.utils import ParsecError
 from parsec.networking import CookedSocket
 from parsec.handshake import HandshakeFormatError, ServerHandshake
@@ -15,7 +15,6 @@ from parsec.schema import BaseCmdSchema, fields, validate
 from parsec.backend.drivers.memory import (
     MemoryUserComponent,
     MemoryVlobComponent,
-    MemoryUserVlobComponent,
     MemoryMessageComponent,
     MemoryBlockStoreComponent,
 )
@@ -23,7 +22,6 @@ from parsec.backend.drivers.postgresql import (
     PGHandler,
     PGUserComponent,
     PGVlobComponent,
-    PGUserVlobComponent,
     PGMessageComponent,
     PGBlockStoreComponent,
 )
@@ -62,10 +60,10 @@ class cmd_EVENT_SUBSCRIBE_Schema(BaseCmdSchema):
         validate=validate.OneOf(
             [
                 "vlob_updated",
-                "user_vlob_updated",
                 "message_arrived",
                 "ping",
                 "device_try_claim_submitted",
+                "device_try_claim_answered",
             ]
         ),
     )
@@ -102,7 +100,7 @@ class ClientContext:
 
 class BackendApp:
     def __init__(self, config):
-        self.signal_ns = blinker.Namespace()
+        self.signal_ns = SignalNamespace()
         self.config = config
         self.nursery = None
         self.blockstore_postgresql = config.blockstore_postgresql
@@ -129,7 +127,6 @@ class BackendApp:
 
             self.user = MemoryUserComponent(self.signal_ns)
             self.vlob = MemoryVlobComponent(self.signal_ns)
-            self.user_vlob = MemoryUserVlobComponent(self.vlob._update_sink_vlob, self.signal_ns)
             self.message = MemoryMessageComponent(self.signal_ns)
 
         else:
@@ -152,7 +149,6 @@ class BackendApp:
 
             self.user = PGUserComponent(self.dbh, self.signal_ns)
             self.vlob = PGVlobComponent(self.dbh, self.signal_ns)
-            self.user_vlob = PGUserVlobComponent(self.dbh, self.signal_ns)
             self.message = PGMessageComponent(self.dbh, self.signal_ns)
 
         self.anonymous_cmds = {
@@ -178,8 +174,6 @@ class BackendApp:
             "vlob_create": self.vlob.api_vlob_create,
             "vlob_read": self.vlob.api_vlob_read,
             "vlob_update": self.vlob.api_vlob_update,
-            "user_vlob_read": self.user_vlob.api_user_vlob_read,
-            "user_vlob_update": self.user_vlob.api_user_vlob_update,
             "message_get": self.message.api_message_get,
             "message_new": self.message.api_message_new,
             "ping": self._api_ping,
@@ -195,7 +189,7 @@ class BackendApp:
 
     async def _api_ping(self, client_ctx, msg):
         msg = cmd_PING_Schema().load_or_abort(msg)
-        self.signal_ns.signal("ping").send(client_ctx.id, msg=msg["ping"])
+        self.signal_ns.signal("ping").send(client_ctx.id, subject=msg["ping"])
         return {"status": "ok", "pong": msg["ping"]}
 
     async def _api_blockstore_post(self, client_ctx, msg):
@@ -215,26 +209,21 @@ class BackendApp:
         event = msg["event"]
         subject = msg["subject"]
 
-        if event in (
-            "user_vlob_updated",
-            "message_arrived",
-            "device_try_claim",
-        ) and subject not in (None, client_ctx.user_id):
-            # TODO: is the `subject == None` valid here ?
-            return {"status": "private_event", "reason": "This type of event is private."}
+        if event in ("message_arrived", "device_try_claim_submitted", "device_try_claim_answered"):
+            if subject not in (None, client_ctx.user_id):
+                return {"status": "private_event", "reason": "This type of event is private."}
+            subject = client_ctx.user_id
 
         def _handle_event(sender, **kwargs):
+            if sender == client_ctx.id or kwargs.get("subject") != subject:
+                return
             try:
                 client_ctx.events.put_nowait((sender, event, kwargs))
             except trio.WouldBlock:
                 logger.warning("event queue is full for %s" % client_ctx.id)
 
         client_ctx.subscribed_events[event, subject] = _handle_event
-        if subject:
-            self.signal_ns.signal(event).connect(_handle_event, sender=subject, weak=True)
-        else:
-            self.signal_ns.signal(event).connect(_handle_event, weak=True)
-            print("BACKEND connect signal", event, self.signal_ns)
+        self.signal_ns.signal(event).connect(_handle_event, weak=True)
         return {"status": "ok"}
 
     async def _api_event_unsubscribe(self, client_ctx, msg):

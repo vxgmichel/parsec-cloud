@@ -12,15 +12,15 @@ def _get_existing_block(backend):
 
 @pytest.mark.trio
 async def test_blockstore_post_and_get(backend, alice, bob):
+    block_id = "123"
     async with connect_backend(backend, auth_as=alice) as sock:
         block = to_jsonb64(b"Hodi ho !")
-        await sock.send({"cmd": "blockstore_post", "block": block})
+        await sock.send({"cmd": "blockstore_post", "id": block_id, "block": block})
         rep = await sock.recv()
     assert rep["status"] == "ok"
-    assert rep["id"]
 
     async with connect_backend(backend, auth_as=bob) as sock:
-        await sock.send({"cmd": "blockstore_get", "id": rep["id"]})
+        await sock.send({"cmd": "blockstore_get", "id": block_id})
         rep = await sock.recv()
     assert rep == {"status": "ok", "block": block}
 
@@ -29,10 +29,12 @@ async def test_blockstore_post_and_get(backend, alice, bob):
     "bad_msg",
     [
         {},
-        {"blob": to_jsonb64(b"..."), "bad_field": "foo"},
-        {"blob": 42},
-        {"blob": None},
-        {"id": "123", "blob": to_jsonb64(b"...")},
+        {"id": "123", "blob": to_jsonb64(b"..."), "bad_field": "foo"},
+        {"id": 42, "blob": to_jsonb64(b"...")},
+        {"id": None, "blob": to_jsonb64(b"...")},
+        {"id": "123", "blob": 42},
+        {"id": "123", "blob": None},
+        {"blob": to_jsonb64(b"...")},
     ],
 )
 @pytest.mark.trio

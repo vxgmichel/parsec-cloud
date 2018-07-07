@@ -22,9 +22,9 @@ async def test_event_api_subscribe_and_receive(core, alice_core_sock):
     assert rep == {"status": "ok"}
 
     await alice_core_sock.send({"cmd": "event_listen"})
-    core.signal_ns.signal("not me !").send("foo")
-    core.signal_ns.signal("ping").send("not this one !")
-    core.signal_ns.signal("ping").send("foo")
+    core.signal_ns.signal("not me !").send("anonymous", subject="foo")
+    core.signal_ns.signal("ping").send("anonymous", subject="not this one !")
+    core.signal_ns.signal("ping").send("anonymous", subject="foo")
     rep = await alice_core_sock.recv()
     assert rep == {"status": "ok", "event": "ping", "subject": "foo"}
 

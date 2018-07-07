@@ -43,11 +43,7 @@ async def event_subscribe(req: dict, client_ctx: ClientContext, core: Core) -> d
     subject = msg["subject"]
 
     try:
-        # Note here we consider `None` as `blinker.ANY` for simplicity sake
-        if subject:
-            client_ctx.subscribe_signal(event, subject)
-        else:
-            client_ctx.subscribe_signal(event)
+        client_ctx.subscribe_signal(event, subject)
     except KeyError as exc:
         return {
             "status": "already_subscribed",

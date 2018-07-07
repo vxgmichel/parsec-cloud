@@ -192,6 +192,8 @@ class ClientContext:
             raise KeyError("%s@%s already subscribed" % key)
 
         def _handle_event(sender, **kwargs):
+            if subject and kwargs["subject"] != subject:
+                return
             try:
                 self.received_signals.put_nowait((signal_name, sender, kwargs))
             except trio.WouldBlock:

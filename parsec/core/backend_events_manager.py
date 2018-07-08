@@ -17,18 +17,28 @@ logger = logbook.Logger("parsec.core.backend_events_manager")
 
 class BackendEventPingRepSchema(UnknownCheckedSchema):
     status = fields.CheckedConstant("ok", required=True)
-    sender = fields.String(required=True)
-    event = fields.String(required=True)
-    subject = fields.String(required=True)
+    event = fields.CheckedConstant("ping", required=True)
+    ping = fields.String(required=True)
 
 
 class BackendEventDeviceTryClaimSubmittedRepSchema(UnknownCheckedSchema):
     status = fields.CheckedConstant("ok", required=True)
-    sender = fields.String(required=True)
-    event = fields.String(required=True)
-    subject = fields.String(required=True)
+    event = fields.CheckedConstant("device.try_claim_submitted", required=True)
     device_name = fields.String(required=True)
     config_try_id = fields.String(required=True)
+
+
+class BackendEventBeaconUpdatedRepSchema(UnknownCheckedSchema):
+    status = fields.CheckedConstant("ok", required=True)
+    event = fields.CheckedConstant("beacon.updated", required=True)
+    beacon_id = fields.String(required=True)
+    index = fields.Integer(required=True)
+
+
+class BackendEventMessageReceivedRepSchema(UnknownCheckedSchema):
+    status = fields.CheckedConstant("ok", required=True)
+    event = fields.CheckedConstant("message.received", required=True)
+    index = fields.Integer(required=True)
 
 
 class BackendEventListenRepSchema(OneOfSchema):
@@ -36,7 +46,9 @@ class BackendEventListenRepSchema(OneOfSchema):
     type_field_remove = False
     type_schemas = {
         "ping": BackendEventPingRepSchema(),
-        "device_try_claim_submitted": BackendEventDeviceTryClaimSubmittedRepSchema(),
+        "device.try_claim_submitted": BackendEventDeviceTryClaimSubmittedRepSchema(),
+        "beacon.updated": BackendEventBeaconUpdatedRepSchema(),
+        "message.received": BackendEventMessageReceivedRepSchema(),
     }
 
     def get_obj_type(self, obj):
@@ -68,28 +80,25 @@ class BackendEventsManager(BaseAsyncComponent):
         self.signal_ns = signal_ns
         self._nursery = None
         self._backend_online_event = trio.Event()
-        self._subscribed_events = set()
+        self._subscribed_events = {("message.received",), ("device.try_claim_submitted",)}
         self._subscribed_events_changed = trio.Event()
         self._task_info = None
-        self.signal_ns.signal("backend.event.subscribe").connect(
-            self._on_event_subscribe, weak=True
-        )
-        self.signal_ns.signal("backend.event.unsubscribe").connect(
-            self._on_event_unsubscribe, weak=True
+        self.signal_ns.signal("backend.beacon.listen").connect(self._on_beacon_listen, weak=True)
+        self.signal_ns.signal("backend.beacon.unlisten").connect(
+            self._on_beacon_unlisten, weak=True
         )
 
-    def _on_event_subscribe(self, sender, event, subject=None):
-        assert sender == self.device.id
-        key = (event, subject)
+    def _on_beacon_listen(self, sender, beacon_id):
+        key = ("beacon.updated", beacon_id)
         if key in self._subscribed_events:
             return
         self._subscribed_events.add(key)
         self._subscribed_events_changed.set()
 
-    def _on_event_unsubscribe(self, sender, event, subject=None):
-        assert sender == self.device.id
+    def _on_beacon_unlisten(self, sender, beacon_id):
+        key = ("beacon.updated", beacon_id)
         try:
-            self._subscribed_events.remove((event, subject))
+            self._subscribed_events.remove(key)
         except KeyError:
             return
         self._subscribed_events_changed.set()
@@ -104,25 +113,19 @@ class BackendEventsManager(BaseAsyncComponent):
         await closed_event.wait()
         self._task_info = None
 
-    async def _restart_el_task(self):
-        new_elt_info = await self._nursery.start(self._event_listener_task)
-        if self._el_task_info:
-            await self._close_task()
-        self._el_task_info = new_elt_info
-
     async def wait_backend_online(self):
         await self._backend_online_event.wait()
 
     def _event_pump_lost(self):
         self._backend_online_event.clear()
-        self.signal_ns.signal("backend.offline").send(self.device.id)
+        self.signal_ns.signal("backend.offline").send(None)
 
     def _event_pump_ready(self):
         if not self._backend_online_event.is_set():
             self._backend_online_event.set()
-            self.signal_ns.signal("backend.online").send(self.device.id)
-        self.signal_ns.signal("backend.event.subscribed").send(
-            self.device.id, events=self._subscribed_events
+            self.signal_ns.signal("backend.online").send(None)
+        self.signal_ns.signal("backend.listener.restarted").send(
+            None, events=self._subscribed_events
         )
 
     async def _task(self, *, task_status=trio.TASK_STATUS_IGNORED):
@@ -186,7 +189,7 @@ class BackendEventsManager(BaseAsyncComponent):
                 # trouble...
                 # TODO: think about this kind of signal format
                 self._event_pump_lost()
-                self.signal_ns.signal("panic").send(exc)
+                self.signal_ns.signal("panic").send(None, exc=exc)
 
     async def _event_pump(self, *, task_status=trio.TASK_STATUS_IGNORED):
         with trio.open_cancel_scope() as cancel_scope:
@@ -196,17 +199,16 @@ class BackendEventsManager(BaseAsyncComponent):
             subscribed_events = self._subscribed_events.copy()
 
             # TODO: allow to subscribe to multiple events in a single query...
-            for event, subject in subscribed_events:
-                await sock.send({"cmd": "event_subscribe", "event": event, "subject": subject})
-                try:
-                    rep = await sock.recv()
-                except Exception as exc:
-                    print("waiting for event, got", exc, id(self))
-                    raise
+            for args in subscribed_events:
+                payload = {"cmd": "event_subscribe", "event": args[0]}
+                if payload["event"] == "beacon.updated":
+                    payload["beacon_id"] = args[1]
+                elif payload["event"] == "ping":
+                    payload["ping"] = args[1]
+                await sock.send(payload)
+                rep = await sock.recv()
                 if rep.get("status") != "ok":
-                    raise SubscribeBackendEventError(
-                        "Cannot subscribe to event `%s@%s`: %r" % (event, subject, rep)
-                    )
+                    raise SubscribeBackendEventError(f"Cannot subscribe to event {args}: {rep}")
 
             task_status.started(cancel_scope)
             while True:
@@ -218,7 +220,15 @@ class BackendEventsManager(BaseAsyncComponent):
                         "Bad reponse %r while listening for event: %r" % (rep, errors)
                     )
 
-                rep.pop("status")
-                sender = rep.pop("sender")
-                assert sender != self.device.id
-                self.signal_ns.signal(rep["event"]).send(sender, **rep)
+                if rep["event"] == "message.received":
+                    self.signal_ns.signal("backend.message.received").send(None, index=rep["index"])
+                elif rep["event"] == "ping":
+                    self.signal_ns.signal("backend.ping").send(None, ping=rep["ping"])
+                elif rep["event"] == "beacon.updated":
+                    self.signal_ns.signal("backend.beacon.updated").send(
+                        None, beacon_id=rep["beacon_id"], index=rep["index"]
+                    )
+                elif rep["event"] == "device.try_claim_submitted":
+                    self.signal_ns.signal("backend.device.try_claim_submitted").send(
+                        None, device_name=rep["device_name"], config_try_id=rep["config_try_id"]
+                    )

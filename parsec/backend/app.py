@@ -231,10 +231,10 @@ class BackendApp:
             expected_beacon_id = msg["beacon_id"]
             key = (event, expected_beacon_id)
 
-            def _build_event_msg(author, beacon_id):
+            def _build_event_msg(author, beacon_id, index):
                 if beacon_id != expected_beacon_id:
                     return None
-                return {"event": event, "author": author, "beacon_id": beacon_id}
+                return {"event": event, "beacon_id": beacon_id, "index": index}
 
         elif event == "message.received":
             key = event
@@ -250,13 +250,7 @@ class BackendApp:
             def _build_event_msg(author, user_id, device_name, config_try_id):
                 if user_id != client_ctx.user_id:
                     return None
-                return {
-                    "event": event,
-                    "author": author,
-                    "user_id": user_id,
-                    "device_name": device_name,
-                    "config_try_id": config_try_id,
-                }
+                return {"event": event, "device_name": device_name, "config_try_id": config_try_id}
 
         elif event == "ping":
             expected_ping = msg["ping"]

@@ -1,6 +1,7 @@
 import pytest
 import trio
 from trio.testing import wait_all_tasks_blocked
+from async_generator import asynccontextmanager
 
 from parsec.core.backend_events_manager import BackendEventsManager
 
@@ -12,8 +13,6 @@ from tests.open_tcp_stream_mock_wrapper import offline
 async def backend_event_manager(nursery, signal_ns, running_backend, alice):
     em = BackendEventsManager(alice, running_backend.addr, signal_ns)
     await em.init(nursery)
-    event_subscribed = connect_signal_as_event(signal_ns, "backend.event.subscribed")
-    await event_subscribed.wait()
     try:
         yield em
 
@@ -21,87 +20,93 @@ async def backend_event_manager(nursery, signal_ns, running_backend, alice):
         await em.teardown()
 
 
-async def subscribe_event(signal_ns, device, event="ping", subject="foo"):
-    signal_ns.signal("backend.event.subscribe").send(device.id, event=event, subject=subject)
-    await wait_event_subscribed(signal_ns, device, {(event, subject)})
+# async def listen_beacon(signal_ns, beacon_id):
+#     async with wait_event_subscribed(signal_ns, {(event, subject)}):
+#         signal_ns.signal("backend.event.subscribe").send(device.id, event=event, subject=subject)
 
 
-async def wait_event_subscribed(signal_ns, device, expected_events):
-    event_subscribed = connect_signal_as_event(signal_ns, "backend.event.subscribed")
+@asynccontextmanager
+async def wait_event_subscribed(signal_ns, events):
+    default_events = {("message.received",), ("device.try_claim_submitted",)}
+    expected_events = default_events | set(events)
+
+    event_subscribed = connect_signal_as_event(signal_ns, "backend.listener.restarted")
+
+    yield
+
     with trio.fail_after(1.0):
         await event_subscribed.wait()
-    event_subscribed.cb.assert_called_with(device.id, events=expected_events)
+    event_subscribed.cb.assert_called_with(None, events=expected_events)
+
+
+@asynccontextmanager
+async def ensure_signal_not_sent(signal_ns, signal):
+    def on_event(*args, **kwargs):
+        raise RuntimeError("Expected listener not to be restarted !")
+
+    with signal_ns.signal(signal).connected_to(on_event):
+        yield
+        await wait_all_tasks_blocked(cushion=0.01)
 
 
 @pytest.mark.trio
-async def test_subscribe_on_init(nursery, signal_ns, running_backend, alice):
+async def test_listen_beacon_on_init(nursery, signal_ns, running_backend, alice):
     em = BackendEventsManager(alice, running_backend.addr, signal_ns)
 
-    signal_ns.signal("backend.event.subscribe").send(alice.id, event="ping", subject="foo")
+    signal_ns.signal("backend.beacon.listen").send(None, beacon_id="123")
 
-    await em.init(nursery)
-
-    await wait_event_subscribed(signal_ns, alice, {("ping", "foo")})
+    async with wait_event_subscribed(signal_ns, {("beacon.updated", "123")}):
+        await em.init(nursery)
 
 
 @pytest.mark.trio
-async def test_subscribe_event(signal_ns, running_backend, alice, backend_event_manager):
-    await subscribe_event(signal_ns, alice)
+async def test_listen_beacon(signal_ns, running_backend, alice, backend_event_manager):
+    async with wait_event_subscribed(signal_ns, {("beacon.updated", "123")}):
+        signal_ns.signal("backend.beacon.listen").send(None, beacon_id="123")
 
-    ping_received = connect_signal_as_event(signal_ns, "ping")
+    event_received = connect_signal_as_event(signal_ns, "backend.beacon.updated")
 
-    running_backend.backend.signal_ns.signal("ping").send("bob@test", subject="foo")
+    running_backend.backend.signal_ns.signal("beacon.updated").send(
+        None, author="bob@test", beacon_id="123", index=1
+    )
 
     with trio.fail_after(1.0):
-        await ping_received.wait()
-    ping_received.cb.assert_called_with("bob@test", event="ping", subject="foo")
+        await event_received.wait()
+    event_received.cb.assert_called_with(None, beacon_id="123", index=1)
 
 
 @pytest.mark.trio
-async def test_unsbuscribe_event(signal_ns, running_backend, alice, backend_event_manager):
-    await subscribe_event(signal_ns, alice)
+async def test_unlisten_beacon(signal_ns, running_backend, alice, backend_event_manager):
 
-    signal_ns.signal("backend.event.unsubscribe").send(alice.id, event="ping", subject="foo")
+    async with wait_event_subscribed(signal_ns, {("beacon.updated", "123")}):
+        signal_ns.signal("backend.beacon.listen").send(None, beacon_id="123")
 
-    await wait_event_subscribed(signal_ns, alice, set())
+    async with wait_event_subscribed(signal_ns, {}):
+        signal_ns.signal("backend.beacon.unlisten").send(None, beacon_id="123")
 
-    def on_ping(*args):
-        raise RuntimeError("Expected not to receive this event !")
-
-    signal_ns.signal("ping").connect(on_ping)
-
-    running_backend.backend.signal_ns.signal("ping").send("bob@test", subject="foo")
-
-    # Nothing occured ? Then we're good !
-    await wait_all_tasks_blocked(cushion=0.01)
+    async with ensure_signal_not_sent(signal_ns, "backend.beacon.updated"):
+        running_backend.backend.signal_ns.signal("beacon.updated").send(
+            None, author="bob@test", beacon_id="123", index=1
+        )
 
 
 @pytest.mark.trio
-async def test_unsubscribe_unknown_event_does_nothing(signal_ns, alice, backend_event_manager):
-    event_subscribed = connect_signal_as_event(signal_ns, "backend.event.subscribed")
-
-    signal_ns.signal("backend.event.unsubscribe").send(alice.id, event="dummy")
-
-    await wait_all_tasks_blocked(cushion=0.01)
-
-    assert not event_subscribed.is_set()
+async def test_unlisten_unknown_beacon_id_does_nothing(signal_ns, alice, backend_event_manager):
+    async with ensure_signal_not_sent(signal_ns, "backend.listener.restarted"):
+        signal_ns.signal("backend.beacon.unlisten").send(None, beacon_id="123")
 
 
 @pytest.mark.trio
-async def test_subscribe_already_subscribed_event_does_nothing(
+async def test_listen_already_listened_beacon_id_does_nothing(
     signal_ns, alice, backend_event_manager
 ):
-    await subscribe_event(signal_ns, alice)
+    async with wait_event_subscribed(signal_ns, {("beacon.updated", "123")}):
+        signal_ns.signal("backend.beacon.listen").send(None, beacon_id="123")
 
     # Second subscribe is useless, event listener shouldn't be restarted
 
-    event_subscribed = connect_signal_as_event(signal_ns, "backend.event.subscribed")
-
-    signal_ns.signal("backend.event.subscribe").send(alice.id, event="ping", subject="foo")
-
-    await wait_all_tasks_blocked(cushion=0.01)
-
-    assert not event_subscribed.is_set()
+    async with ensure_signal_not_sent(signal_ns, "backend.listener.restarted"):
+        signal_ns.signal("backend.beacon.listen").send(None, beacon_id="123")
 
 
 @pytest.mark.trio
@@ -110,7 +115,8 @@ async def test_backend_switch_offline(
 ):
     mock_clock.rate = 1.0
 
-    await subscribe_event(signal_ns, alice)
+    async with wait_event_subscribed(signal_ns, {("beacon.updated", "123")}):
+        signal_ns.signal("backend.beacon.listen").send(None, beacon_id="123")
 
     backend_offline = connect_signal_as_event(signal_ns, "backend.offline")
 
@@ -118,7 +124,7 @@ async def test_backend_switch_offline(
         with trio.fail_after(1.0):
             await backend_offline.wait()
         backend_online = connect_signal_as_event(signal_ns, "backend.online")
-        event_subscribed = connect_signal_as_event(signal_ns, "backend.event.subscribed")
+        event_subscribed = connect_signal_as_event(signal_ns, "backend.listener.restarted")
 
     # Backend event manager waits before retrying to connect
     mock_clock.jump(5.0)
@@ -128,8 +134,12 @@ async def test_backend_switch_offline(
         await event_subscribed.wait()
 
     # Make sure event system still works as expected
-    ping_received = connect_signal_as_event(signal_ns, "ping")
-    running_backend.backend.signal_ns.signal("ping").send("bob@test", subject="foo")
+    event_received = connect_signal_as_event(signal_ns, "backend.beacon.updated")
+
+    running_backend.backend.signal_ns.signal("beacon.updated").send(
+        None, author="bob@test", beacon_id="123", index=1
+    )
+
     with trio.fail_after(1.0):
-        await ping_received.wait()
-    ping_received.cb.assert_called_with("bob@test", event="ping", subject="foo")
+        await event_received.wait()
+    event_received.cb.assert_called_with(None, beacon_id="123", index=1)

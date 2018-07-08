@@ -40,7 +40,11 @@ async def test_multi_connections(core):
 async def test_offline_login_and_logout(backend, core, mallory):
     # Backend is not available, hence we can use a user not registered in it
     core.devices_manager.register_new_device(
-        mallory.id, mallory.user_privkey.encode(), mallory.device_signkey.encode(), "<secret>"
+        mallory.id,
+        mallory.user_privkey.encode(),
+        mallory.device_signkey.encode(),
+        mallory.user_manifest_access,
+        "<secret>",
     )
 
     async with connect_core(core) as sock:
@@ -77,7 +81,7 @@ async def test_offline_login_and_logout(backend, core, mallory):
             assert rep == {"status": "ok"}
             await sock.send({"cmd": "get_core_state"})
             rep = await sock.recv()
-            assert rep == {"status": "ok", "login": "mallory@test", "backend_online": False}
+            assert rep == {"status": "ok", "login": mallory.id, "backend_online": False}
 
 
 @pytest.mark.trio

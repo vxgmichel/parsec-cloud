@@ -1,6 +1,7 @@
 import trio
 from trio.hazmat import current_clock
 
+from parsec.core.base import BaseAsyncComponent
 from parsec.core.backend_connection import BackendNotAvailable
 
 
@@ -13,8 +14,9 @@ def timestamp():
     return current_clock().current_time()
 
 
-class SyncMonitor:
+class SyncMonitor(BaseAsyncComponent):
     def __init__(self, local_manifest_fs, syncer, signal_ns):
+        super().__init__()
         self._local_manifest_fs = local_manifest_fs
         self._syncer = syncer
         self._task_cancel_scope = None
@@ -22,10 +24,10 @@ class SyncMonitor:
         self._new_event = trio.Event()
         self.signal_ns = signal_ns
 
-    async def init(self, nursery):
+    async def _init(self, nursery):
         self._task_cancel_scope = await nursery.start(self._task)
 
-    async def teardown(self):
+    async def _teardown(self):
         self._task_cancel_scope.cancel()
 
     async def _task(self, *, task_status=trio.TASK_STATUS_IGNORED):

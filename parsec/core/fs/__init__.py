@@ -115,5 +115,5 @@ class FS:
         access = await self._load_and_retry(self._local_folder_fs.get_access, sync_path)
         notify = self._local_folder_fs.get_beacons(sync_path)
         await self._load_and_retry(
-            self._syncer.sync, access, recursive=sync_recursive, notify=notify
+            self._syncer.sync, sync_path, access, recursive=sync_recursive, notify=notify
         )

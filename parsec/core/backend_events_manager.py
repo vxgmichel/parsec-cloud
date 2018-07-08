@@ -67,7 +67,7 @@ class BackendEventsManager(BaseAsyncComponent):
         self.backend_addr = backend_addr
         self.signal_ns = signal_ns
         self._nursery = None
-        self._backend_offline = True
+        self._backend_online_event = trio.Event()
         self._subscribed_events = set()
         self._subscribed_events_changed = trio.Event()
         self._task_info = None
@@ -110,13 +110,16 @@ class BackendEventsManager(BaseAsyncComponent):
             await self._close_task()
         self._el_task_info = new_elt_info
 
+    async def wait_backend_online(self):
+        await self._backend_online_event.wait()
+
     def _event_pump_lost(self):
-        self._backend_offline = True
+        self._backend_online_event.clear()
         self.signal_ns.signal("backend.offline").send(self.device.id)
 
     def _event_pump_ready(self):
-        if self._backend_offline:
-            self._backend_offline = False
+        if not self._backend_online_event.is_set():
+            self._backend_online_event.set()
             self.signal_ns.signal("backend.online").send(self.device.id)
         self.signal_ns.signal("backend.event.subscribed").send(
             self.device.id, events=self._subscribed_events
@@ -125,10 +128,25 @@ class BackendEventsManager(BaseAsyncComponent):
     async def _task(self, *, task_status=trio.TASK_STATUS_IGNORED):
         closed_event = trio.Event()
         try:
-            with trio.open_cancel_scope() as cancel_scope:
-                task_status.started((cancel_scope, closed_event))
+            async with trio.open_nursery() as nursery:
 
+                # If backend is online, we want to wait before calling
+                # `task_status.started` until we are connected to the backend
+                # with events listener ready.
+                async def _wait_first_backend_connection_outcome():
+                    cb_called = trio.Event()
+
+                    def _cb(sender):
+                        cb_called.set()
+
+                    with self.signal_ns.signal('backend.offline').connected_to(_cb), \
+                            self.signal_ns.signal('backend.online').connected_to(_cb):
+                        await cb_called.wait()
+                        task_status.started((nursery.cancel_scope, closed_event))
+
+                nursery.start_soon(_wait_first_backend_connection_outcome)
                 await self._event_listener_manager()
+
         finally:
             closed_event.set()
 
@@ -179,7 +197,11 @@ class BackendEventsManager(BaseAsyncComponent):
             # TODO: allow to subscribe to multiple events in a single query...
             for event, subject in subscribed_events:
                 await sock.send({"cmd": "event_subscribe", "event": event, "subject": subject})
-                rep = await sock.recv()
+                try:
+                    rep = await sock.recv()
+                except Exception as exc:
+                    print('waiting for event, got', exc, id(self))
+                    raise
                 if rep.get("status") != "ok":
                     raise SubscribeBackendEventError(
                         "Cannot subscribe to event `%s@%s`: %r" % (event, subject, rep)

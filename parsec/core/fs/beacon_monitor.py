@@ -1,6 +1,7 @@
 import trio
 import pickle
 
+from parsec.core.base import BaseAsyncComponent
 try:
     from parsec.utils import sym_decrypt, verify
 except ImportError:
@@ -16,18 +17,19 @@ except ImportError:
 # only bother about them when they're really needed
 
 
-class BeaconMonitor:
+class BeaconMonitor(BaseAsyncComponent):
     def __init__(self, device, local_db, signal_ns):
+        super().__init__()
         self._device = device
         self._local_db = local_db
         self._task_cancel_scope = None
         self._workspaces = {}
         self.signal_ns = signal_ns
 
-    async def init(self, nursery):
+    async def _init(self, nursery):
         self._task_cancel_scope = await nursery.start(self._task)
 
-    async def teardown(self):
+    async def _teardown(self):
         self._task_cancel_scope.cancel()
 
     def _retreive_beacon_key(self, beacon_id):
@@ -40,6 +42,10 @@ class BeaconMonitor:
                 return child_access["key"]
 
     async def _task(self, *, task_status=trio.TASK_STATUS_IGNORED):
+        core.signal_ns.signal("backend.event.subscribe").send(
+            core.auth_device.id, event='beacon.updated', subject=subject
+        )
+
         def _on_workspace_loaded(sender, path, beacon_id):
             self._workspaces[beacon_id] = path
 

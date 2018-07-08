@@ -139,8 +139,9 @@ class BackendEventsManager(BaseAsyncComponent):
                     def _cb(sender):
                         cb_called.set()
 
-                    with self.signal_ns.signal('backend.offline').connected_to(_cb), \
-                            self.signal_ns.signal('backend.online').connected_to(_cb):
+                    with self.signal_ns.signal("backend.offline").connected_to(
+                        _cb
+                    ), self.signal_ns.signal("backend.online").connected_to(_cb):
                         await cb_called.wait()
                         task_status.started((nursery.cancel_scope, closed_event))
 
@@ -200,7 +201,7 @@ class BackendEventsManager(BaseAsyncComponent):
                 try:
                     rep = await sock.recv()
                 except Exception as exc:
-                    print('waiting for event, got', exc, id(self))
+                    print("waiting for event, got", exc, id(self))
                     raise
                 if rep.get("status") != "ok":
                     raise SubscribeBackendEventError(

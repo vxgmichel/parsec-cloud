@@ -2,6 +2,7 @@ import trio
 import pickle
 
 from parsec.core.base import BaseAsyncComponent
+
 try:
     from parsec.utils import sym_decrypt, verify
 except ImportError:
@@ -43,7 +44,7 @@ class BeaconMonitor(BaseAsyncComponent):
 
     async def _task(self, *, task_status=trio.TASK_STATUS_IGNORED):
         core.signal_ns.signal("backend.event.subscribe").send(
-            core.auth_device.id, event='beacon.updated', subject=subject
+            core.auth_device.id, event="beacon.updated", subject=subject
         )
 
         def _on_workspace_loaded(sender, path, beacon_id):

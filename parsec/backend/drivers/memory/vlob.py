@@ -13,7 +13,8 @@ class MemoryVlob:
 
 
 class MemoryVlobComponent(BaseVlobComponent):
-    def __init__(self, signal_ns):
+    def __init__(self, signal_ns, beacon_component):
+        self._beacon_component = beacon_component
         self._signal_vlob_updated = signal_ns.signal("vlob_updated")
         self.vlobs = {}
 
@@ -32,20 +33,18 @@ class MemoryVlobComponent(BaseVlobComponent):
         return changed
 
     async def create(self, id, rts, wts, blob, notify_beacons=(), author="anonymous"):
-        # TODO
-        # for beacon_id in notify_beacons:
-        #     await self._update_sink_vlob(beacon_id, id.encode("utf-8"))
-
         vlob = MemoryVlob(id, rts, wts, blob)
         self.vlobs[vlob.id] = vlob
+
+        self._signal_vlob_updated.send(author, subject=id)
+        await self._notify_beacons(notify_beacons, id, author)
+
         return VlobAtom(
             id=vlob.id,
             read_trust_seed=vlob.read_trust_seed,
             write_trust_seed=vlob.write_trust_seed,
             blob=vlob.blob_versions[0],
         )
-
-        self._signal_vlob_updated.send(author, subject=id)
 
     async def read(self, id, rts, version=None):
         try:
@@ -84,20 +83,8 @@ class MemoryVlobComponent(BaseVlobComponent):
             raise VersionError("Wrong blob version.")
 
         self._signal_vlob_updated.send(author, subject=id)
-        # TODO
-        # for sink_id in notify_sinks:
-        #     await self._update_sink_vlob(sink_id, id.encode("utf-8"))
+        await self._notify_beacons(notify_beacons, id, author)
 
-    # async def _notify_beacons(self, sink_id, data):
-    #     try:
-    #         vlob = self.vlobs[sink_id]
-    #         if not vlob.is_sink:
-    #             raise ParsecError("not_a_sink", "Not a sink vlob")
-    #         vlob.blob_versions.append(data)
-
-    #     except KeyError:
-    #         self.vlobs[sink_id] = MemoryVlob(
-    #             id=sink_id, read_trust_seed=sink_id, blob=data, is_sink=True
-    #         )
-
-    #     self._signal_vlob_updated.send(author, subject=sink_id)
+    async def _notify_beacons(self, ids, data, author):
+        for id in ids:
+            await self._beacon_component.update(id, data, author=author)

@@ -115,7 +115,7 @@ class Syncer:
         return ret
 
     async def _sync_nolock(self, path, access, recursive, notify):
-        print('sync nolock', access)
+        print("sync nolock", access)
         msg = {"id": access["id"]}
         notify_msgs = self._build_beacon_messages(notify, msg)
 
@@ -130,15 +130,15 @@ class Syncer:
             if not manifest["need_sync"]:
                 self._local_manifest_fs.mark_outdated_manifest(access)
                 self.signal_ns.signal("fs.entry.synced").send("local", path=path, id=access["id"])
-                print('sync file oudating entry', access['id'])
+                print("sync file oudating entry", access["id"])
                 return
 
-            print('sync file uploading blocks', access['id'])
+            print("sync file uploading blocks", access["id"])
             for db_access in manifest["dirty_blocks"]:
                 db = self._local_manifest_fs.get_manifest(db_access)
                 await self._backend_block_post(db_access, db)
             manifest["blocks"] += manifest["dirty_blocks"]
-            print('sync file blocks uploaded', access['id'])
+            print("sync file blocks uploaded", access["id"])
 
             remote_manifest = {
                 "type": "file_manifest",
@@ -154,13 +154,13 @@ class Syncer:
             signed = sign(self.device.device_signkey, raw)
             ciphered = sym_encrypt(access["key"], signed)
             if manifest["is_placeholder"]:
-                print('sync file placeholder sync', access['id'])
+                print("sync file placeholder sync", access["id"])
                 await self._backend_vlob_create(
                     access["id"], access["rts"], access["wts"], ciphered, notify=notify_msgs
                 )
-                print('sync file placeholder sync done', access['id'])
+                print("sync file placeholder sync done", access["id"])
             else:
-                print('sync file update sync', access['id'])
+                print("sync file update sync", access["id"])
                 await self._backend_vlob_update(
                     access["id"],
                     access["wts"],
@@ -168,7 +168,7 @@ class Syncer:
                     ciphered,
                     notify=notify_msgs,
                 )
-                print('sync file update sync done', access['id'])
+                print("sync file update sync done", access["id"])
 
             # Fuck the merge...
             updated_manifest = remote_to_local_manifest(remote_manifest)
@@ -176,23 +176,27 @@ class Syncer:
 
         else:
             if recursive:
-                print('sync folder, sync children', access['id'])
+                print("sync folder, sync children", access["id"])
                 for child_name, child_access in manifest["children"].items():
-                    print('sync folder, sync children', access['id'], child_name, child_access['id'])
+                    print(
+                        "sync folder, sync children", access["id"], child_name, child_access["id"]
+                    )
                     if isinstance(recursive, dict):
                         child_recursive = recursive.get(child_name, False)
                     else:
                         child_recursive = recursive
                     child_path = os.path.join(path, child_name)
-                    await self._sync_nolock(child_path, child_access, recursive=child_recursive, notify=notify)
-                    print('sync folder, sync children done', access['id'], child_name)
+                    await self._sync_nolock(
+                        child_path, child_access, recursive=child_recursive, notify=notify
+                    )
+                    print("sync folder, sync children done", access["id"], child_name)
 
             # If recursive=False, placeholder are stored in parent but not resolved...
 
             if not manifest["need_sync"]:
                 self._local_manifest_fs.mark_outdated_manifest(access)
                 self.signal_ns.signal("fs.entry.synced").send("local", path=path, id=access["id"])
-                print('sync folder, oudating marked', access['id'])
+                print("sync folder, oudating marked", access["id"])
                 return
 
             remote_manifest = local_to_remote_manifest(manifest)
@@ -202,13 +206,13 @@ class Syncer:
             signed = sign(self.device.device_signkey, raw)
             ciphered = sym_encrypt(access["key"], signed)
             if manifest["is_placeholder"]:
-                print('sync folder, placeholder sync', access['id'])
+                print("sync folder, placeholder sync", access["id"])
                 await self._backend_vlob_create(
                     access["id"], access["rts"], access["wts"], ciphered, notify=notify_msgs
                 )
-                print('sync folder, placeholder sync done', access['id'])
+                print("sync folder, placeholder sync done", access["id"])
             else:
-                print('sync folder, update sync', access['id'])
+                print("sync folder, update sync", access["id"])
                 await self._backend_vlob_update(
                     access["id"],
                     access["wts"],
@@ -216,11 +220,11 @@ class Syncer:
                     ciphered,
                     notify=notify_msgs,
                 )
-                print('sync folder, update sync done', access['id'])
+                print("sync folder, update sync done", access["id"])
 
             # Fuck the merge...
             updated_manifest = remote_to_local_manifest(remote_manifest)
             self._local_manifest_fs.set_manifest(access, updated_manifest)
 
-        print(' ********************** send signal to ', id(self.signal_ns))
+        print(" ********************** send signal to ", id(self.signal_ns))
         self.signal_ns.signal("fs.entry.synced").send("local", path=path, id=access["id"])

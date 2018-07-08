@@ -11,26 +11,34 @@ from tests.open_tcp_stream_mock_wrapper import offline
 async def wait_for_entries_synced(core, entries_pathes):
     # First make sure the backend event manager is ready to listen events
     await core.backend_events_manager.wait_backend_online()
-    print('subs:', id(core), core.backend_events_manager._subscribed_events, core.backend_events_manager._subscribed_events_changed.is_set())
+    print(
+        "subs:",
+        id(core),
+        core.backend_events_manager._subscribed_events,
+        core.backend_events_manager._subscribed_events_changed.is_set(),
+    )
 
     event = trio.Event()
     to_sync = set(entries_pathes)
     synced = set()
 
     core_id = id(core)
+
     def _on_entry_synced(sender, id, path):
-        print(core_id, 'ENTRY SYNCED', id, path)
+        print(core_id, "ENTRY SYNCED", id, path)
 
         if path not in to_sync:
             raise AssertionError(f"{path} wasn't supposed to be synced, expected only {to_sync}")
         if path in synced:
-            raise AssertionError(f"{path} synced two time while waiting synchro for {to_sync - synced}")
+            raise AssertionError(
+                f"{path} synced two time while waiting synchro for {to_sync - synced}"
+            )
 
         synced.add(path)
         if synced == to_sync:
             event.set()
 
-    print('******************** connect signal to ', id(core.signal_ns))
+    print("******************** connect signal to ", id(core.signal_ns))
     with core.signal_ns.signal("fs.entry.synced").temporarily_connected_to(_on_entry_synced):
 
         yield event
@@ -40,8 +48,9 @@ async def wait_for_entries_synced(core, entries_pathes):
 
 @pytest.mark.trio
 async def test_online_sync(running_backend, alice_core, alice2_core2):
-    async with wait_for_entries_synced(alice2_core2, ["/"]), \
-        wait_for_entries_synced(alice_core, ("/", "/foo.txt")):
+    async with wait_for_entries_synced(alice2_core2, ["/"]), wait_for_entries_synced(
+        alice_core, ("/", "/foo.txt")
+    ):
 
         with freeze_time("2000-01-02"):
             await alice_core.fs.file_create("/foo.txt")
@@ -133,7 +142,7 @@ async def test_fast_forward_on_offline_during_sync(
 
                     await alice2_core2.fs.sync("/foo.txt")
 
-            print('OFFLINE !!!')
+            print("OFFLINE !!!")
             # core2 goes offline, other core is still connected to backend
             # with offline(core2_backend_addr):
 
@@ -143,7 +152,6 @@ async def test_fast_forward_on_offline_during_sync(
 
             #     async withalice_core,  wait_for_entries_synced(("/", "/bar", "/foo.txt")):
             #         await alice_core.fs.sync("/")
-
 
             #     # Make sure we are really offline
             #     # with pytest.raises(SystemError):

@@ -17,6 +17,7 @@ from parsec.backend.drivers.memory import (
     MemoryVlobComponent,
     MemoryMessageComponent,
     MemoryBlockStoreComponent,
+    MemoryBeaconComponent,
 )
 from parsec.backend.drivers.postgresql import (
     PGHandler,
@@ -126,8 +127,9 @@ class BackendApp:
                 self.blockstore = None
 
             self.user = MemoryUserComponent(self.signal_ns)
-            self.vlob = MemoryVlobComponent(self.signal_ns)
             self.message = MemoryMessageComponent(self.signal_ns)
+            self.beacon = MemoryBeaconComponent(self.signal_ns)
+            self.vlob = MemoryVlobComponent(self.signal_ns, self.beacon)
 
         else:
             self.dbh = PGHandler(self.config.dburl, self.signal_ns)
@@ -174,6 +176,7 @@ class BackendApp:
             "vlob_create": self.vlob.api_vlob_create,
             "vlob_read": self.vlob.api_vlob_read,
             "vlob_update": self.vlob.api_vlob_update,
+            "beacon_read": self.beacon.api_beacon_read,
             "message_get": self.message.api_message_get,
             "message_new": self.message.api_message_new,
             "ping": self._api_ping,

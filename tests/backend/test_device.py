@@ -4,6 +4,7 @@ from nacl.public import PrivateKey, SealedBox
 from unittest.mock import patch
 
 from parsec.utils import to_jsonb64, from_jsonb64
+from parsec.core.devices_manager import dumps_user_manifest_access
 
 from tests.common import freeze_time
 
@@ -65,7 +66,7 @@ async def test_device_configure(
 
     # 1) Existing device start listening for device configuration
 
-    await alice_sock.send({"cmd": "event_subscribe", "event": "device_try_claim_submitted"})
+    await alice_sock.send({"cmd": "event_subscribe", "event": "device.try_claim_submitted"})
     rep = await alice_sock.recv()
     assert rep == {"status": "ok"}
 
@@ -78,7 +79,7 @@ async def test_device_configure(
             "device_name": "phone2",
             "configure_device_token": configure_device_token,
             "device_verify_key": to_jsonb64(verifykey),
-            "user_privkey_cipherkey": to_jsonb64(cipherkey),
+            "exchange_cipherkey": to_jsonb64(cipherkey),
         }
     )
 
@@ -89,11 +90,11 @@ async def test_device_configure(
         rep = await alice_sock.recv()
     assert rep == {
         "status": "ok",
-        "event": "device_try_claim_submitted",
-        "subject": "alice",
+        "event": "device.try_claim_submitted",
+        "user_id": "alice",
         "device_name": "phone2",
         "config_try_id": "<config_try_id>",
-        "sender": "anonymous",
+        "author": "anonymous",
     }
 
     # 4) Existing device retreive configuration try informations
@@ -107,19 +108,23 @@ async def test_device_configure(
         "configuration_status": "waiting_answer",
         "device_name": "phone2",
         "device_verify_key": "MLqfWdG0RJMN9qdb6Kr57mG4AZjBfmltfUP63lzmoS0=\n",
-        "user_privkey_cipherkey": "i/zBiLfXFnTOPH/Sal9mVEkUcic6DUYh/36oDZEy404=\n",
+        "exchange_cipherkey": "i/zBiLfXFnTOPH/Sal9mVEkUcic6DUYh/36oDZEy404=\n",
     }
-    user_privkey_cipherkey = PrivateKey(from_jsonb64(rep["user_privkey_cipherkey"]))
+    exchange_cipherkey = PrivateKey(from_jsonb64(rep["exchange_cipherkey"]))
 
     # 5) Existing device accept configuration
 
-    box = SealedBox(user_privkey_cipherkey)
+    box = SealedBox(exchange_cipherkey)
     ciphered_user_privkey = box.encrypt(alice.user_privkey.encode())
+    ciphered_user_manifest_access = box.encrypt(
+        dumps_user_manifest_access(alice.user_manifest_access)
+    )
     await alice_sock.send(
         {
             "cmd": "device_accept_configuration_try",
             "config_try_id": "<config_try_id>",
             "ciphered_user_privkey": to_jsonb64(ciphered_user_privkey),
+            "ciphered_user_manifest_access": to_jsonb64(ciphered_user_manifest_access),
         }
     )
     rep = await alice_sock.recv()
@@ -142,7 +147,7 @@ async def test_device_configure_and_get_refused(
 
     # 1) Existing device start listening for device configuration
 
-    await alice_sock.send({"cmd": "event_subscribe", "event": "device_try_claim_submitted"})
+    await alice_sock.send({"cmd": "event_subscribe", "event": "device.try_claim_submitted"})
     rep = await alice_sock.recv()
     assert rep == {"status": "ok"}
 
@@ -155,7 +160,7 @@ async def test_device_configure_and_get_refused(
             "device_name": "phone2",
             "configure_device_token": configure_device_token,
             "device_verify_key": to_jsonb64(b"<verifykey>"),
-            "user_privkey_cipherkey": to_jsonb64(b"<cipherkey>"),
+            "exchange_cipherkey": to_jsonb64(b"<cipherkey>"),
         }
     )
 
@@ -166,9 +171,9 @@ async def test_device_configure_and_get_refused(
         rep = await alice_sock.recv()
     assert rep == {
         "status": "ok",
-        "event": "device_try_claim_submitted",
-        "sender": "anonymous",
-        "subject": "alice",
+        "event": "device.try_claim_submitted",
+        "author": "anonymous",
+        "user_id": "alice",
         "device_name": "phone2",
         "config_try_id": "<config_try_id>",
     }
@@ -204,7 +209,7 @@ async def test_device_configure_timeout(anonymous_backend_sock, configure_device
             "device_name": "phone2",
             "configure_device_token": configure_device_token,
             "device_verify_key": to_jsonb64(b"<verifykey>"),
-            "user_privkey_cipherkey": to_jsonb64(b"<cipherkey>"),
+            "exchange_cipherkey": to_jsonb64(b"<cipherkey>"),
         }
     )
 
@@ -234,6 +239,7 @@ async def test_device_accept_configuration_try_unknown(alice_backend_sock):
             "cmd": "device_accept_configuration_try",
             "config_try_id": "<dummy>",
             "ciphered_user_privkey": to_jsonb64(b"whatever..."),
+            "ciphered_user_manifest_access": to_jsonb64(b"whatever..."),
         }
     )
     rep = await alice_backend_sock.recv()

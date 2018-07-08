@@ -66,6 +66,18 @@ device_conf_schema = DeviceConfSchema()
 user_manifest_access_schema = UserManifestAccessSchema()
 
 
+def dumps_user_manifest_access(access):
+    user_manifest_access_raw, errors = user_manifest_access_schema.dumps(access)
+    assert not errors
+    return user_manifest_access_raw.encode()
+
+
+def loads_user_manifest_access(data):
+    user_manifest_access, errors = user_manifest_access_schema.loads(data.decode())
+    assert not errors
+    return user_manifest_access
+
+
 def _secret_box_factory(password, salt):
     key = argon2i.kdf(
         SecretBox.KEY_SIZE, password, salt, opslimit=CRYPTO_OPSLIMIT, memlimit=CRYPTO_MEMLIMIT

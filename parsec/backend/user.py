@@ -37,7 +37,7 @@ class DeviceConfigureSchema(BaseCmdSchema):
     device_verify_key = fields.Base64Bytes(required=True)
     # TODO: should be itself ciphered with a password-derived key
     # to mitigate man-in-the-middle attack
-    user_privkey_cipherkey = fields.Base64Bytes(required=True)
+    exchange_cipherkey = fields.Base64Bytes(required=True)
 
 
 class DeviceSchema(UnknownCheckedSchema):
@@ -68,9 +68,8 @@ def _generate_token():
 
 class BaseUserComponent:
     def __init__(self, signal_ns):
-        self._signal_user_claimed = signal_ns.signal("user_claimed")
-        self._signal_device_try_claim_submitted = signal_ns.signal("device_try_claim_submitted")
-        self._signal_device_try_claim_answered = signal_ns.signal("device_try_claim_answered")
+        self._signal_device_try_claim_submitted = signal_ns.signal("device.try_claim_submitted")
+        self._signal_device_try_claim_answered = signal_ns.signal("device.try_claim_answered")
 
     async def api_user_get(self, client_ctx, msg):
         msg = UserIDSchema().load_or_abort(msg)
@@ -140,11 +139,7 @@ class BaseUserComponent:
 
         config_try_id = _generate_token()
         await self.register_device_configuration_try(
-            config_try_id,
-            user_id,
-            device_name,
-            msg["device_verify_key"],
-            msg["user_privkey_cipherkey"],
+            config_try_id, user_id, device_name, msg["device_verify_key"], msg["exchange_cipherkey"]
         )
 
         claim_answered = trio.Event()
@@ -153,9 +148,13 @@ class BaseUserComponent:
             if kwargs["subject"] == user_id and kwargs["config_try_id"] == config_try_id:
                 claim_answered.set()
 
-        with self._signal_device_try_claim_answered.temporarily_connected_to(_on_claim_answered):
+        with self._signal_device_try_claim_answered.connected_to(_on_claim_answered):
             self._signal_device_try_claim_submitted.send(
-                client_ctx.id, subject=user_id, device_name=device_name, config_try_id=config_try_id
+                None,
+                author=client_ctx.id,
+                user_id=user_id,
+                device_name=device_name,
+                config_try_id=config_try_id,
             )
             with trio.move_on_after(5 * 60) as cancel_scope:
                 await claim_answered.wait()
@@ -198,7 +197,7 @@ class BaseUserComponent:
             "device_name": config_try["device_name"],
             "configuration_status": config_try["status"],
             "device_verify_key": to_jsonb64(config_try["device_verify_key"]),
-            "user_privkey_cipherkey": to_jsonb64(config_try["user_privkey_cipherkey"]),
+            "exchange_cipherkey": to_jsonb64(config_try["exchange_cipherkey"]),
         }
 
     async def api_device_accept_configuration_try(self, client_ctx, msg):
@@ -250,7 +249,7 @@ class BaseUserComponent:
         raise NotImplementedError()
 
     async def register_device_configuration_try(
-        self, config_try_id, id, device_name, device_verify_key, user_privkey_cipherkey
+        self, config_try_id, id, device_name, device_verify_key, exchange_cipherkey
     ):
         raise NotImplementedError()
 

@@ -251,7 +251,7 @@ class PGUserComponent(BaseUserComponent):
                     raise ParsecError("Insertion error.")
 
     async def register_device_configuration_try(
-        self, config_try_id, user_id, device_name, device_verify_key, user_privkey_cipherkey
+        self, config_try_id, user_id, device_name, device_verify_key, exchange_cipherkey
     ):
         async with self.dbh.pool.acquire() as conn:
             # TODO: handle multiple configuration tries on a given device
@@ -259,7 +259,7 @@ class PGUserComponent(BaseUserComponent):
                 """
                 INSERT INTO device_configure_tries (
                     user_id, config_try_id, status, device_name, device_verify_key,
-                    user_privkey_cipherkey
+                    exchange_cipherkey
                 ) VALUES ($1, $2, $3, $4, $5, $6)
                 """,
                 user_id,
@@ -267,7 +267,7 @@ class PGUserComponent(BaseUserComponent):
                 "waiting_answer",
                 device_name,
                 device_verify_key,
-                user_privkey_cipherkey,
+                exchange_cipherkey,
             )
             if result != "INSERT 0 1":
                 raise ParsecError("Insertion error.")
@@ -277,7 +277,7 @@ class PGUserComponent(BaseUserComponent):
         async with self.dbh.pool.acquire() as conn:
             config_try = await conn.fetchrow(
                 """
-                SELECT status, device_name, device_verify_key, user_privkey_cipherkey,
+                SELECT status, device_name, device_verify_key, exchange_cipherkey,
                     ciphered_user_privkey, refused_reason
                 FROM device_configure_tries WHERE user_id = $1 AND config_try_id = $2
                 """,
@@ -291,7 +291,7 @@ class PGUserComponent(BaseUserComponent):
             "status": config_try[0],
             "device_name": config_try[1],
             "device_verify_key": config_try[2],
-            "user_privkey_cipherkey": config_try[3],
+            "exchange_cipherkey": config_try[3],
             "ciphered_user_privkey": config_try[4],
             "refused_reason": config_try[5],
         }

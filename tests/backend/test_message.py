@@ -13,7 +13,7 @@ async def test_message_from_bob_to_alice(backend, alice, bob):
         backend, auth_as=bob
     ) as bob_sock:
 
-        await alice_sock.send({"cmd": "event_subscribe", "event": "message_arrived"})
+        await alice_sock.send({"cmd": "event_subscribe", "event": "message.received"})
         rep = await alice_sock.recv()
         assert rep == {"status": "ok"}
 
@@ -31,12 +31,7 @@ async def test_message_from_bob_to_alice(backend, alice, bob):
 
         with trio.fail_after(1):
             rep = await alice_sock.recv()
-        assert rep == {
-            "status": "ok",
-            "sender": bob.id,
-            "event": "message_arrived",
-            "subject": alice.user_id,
-        }
+        assert rep == {"status": "ok", "event": "message.received", "index": 1}
 
         await alice_sock.send({"cmd": "message_get"})
         rep = await alice_sock.recv()
@@ -73,7 +68,7 @@ async def test_message_from_bob_to_alice_multi_backends(asyncio_loop, postgresql
             backend_2, auth_as=bob
         ) as bob_sock:
 
-            await alice_sock.send({"cmd": "event_subscribe", "event": "message_arrived"})
+            await alice_sock.send({"cmd": "event_subscribe", "event": "message.received"})
             rep = await alice_sock.recv()
             assert rep == {"status": "ok"}
 
@@ -91,7 +86,7 @@ async def test_message_from_bob_to_alice_multi_backends(asyncio_loop, postgresql
 
             with trio.fail_after(1):
                 rep = await alice_sock.recv()
-            assert rep == {"status": "ok", "event": "message_arrived", "subject": alice.user_id}
+            assert rep == {"status": "ok", "event": "message.received", "index": 1}
 
             await alice_sock.send({"cmd": "message_get"})
             rep = await alice_sock.recv()

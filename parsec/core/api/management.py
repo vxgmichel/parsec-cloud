@@ -15,7 +15,7 @@ class BackendGetConfigurationTrySchema(UnknownCheckedSchema):
     device_name = fields.String(required=True)
     configuration_status = fields.String(required=True)
     device_verify_key = fields.Base64Bytes(required=True)
-    user_privkey_cipherkey = fields.Base64Bytes(required=True)
+    exchange_cipherkey = fields.Base64Bytes(required=True)
 
 
 backend_get_configuration_try_schema = BackendGetConfigurationTrySchema()
@@ -119,7 +119,7 @@ async def device_configure(req: dict, client_ctx: ClientContext, core: Core) -> 
     msg = cmd_DEVICE_CONFIGURE_Schema().load(req)
 
     user_id, device_name = msg["device_id"].split("@")
-    user_privkey_cipherkey_privkey = PrivateKey.generate()
+    exchange_cipherkey_privkey = PrivateKey.generate()
     device_signkey = SigningKey.generate()
 
     try:
@@ -131,9 +131,7 @@ async def device_configure(req: dict, client_ctx: ClientContext, core: Core) -> 
                 "device_name": device_name,
                 "configure_device_token": msg["configure_device_token"],
                 "device_verify_key": to_jsonb64(device_signkey.verify_key.encode()),
-                "user_privkey_cipherkey": to_jsonb64(
-                    user_privkey_cipherkey_privkey.public_key.encode()
-                ),
+                "exchange_cipherkey": to_jsonb64(exchange_cipherkey_privkey.public_key.encode()),
             },
         )
     except BackendNotAvailable:
@@ -143,7 +141,7 @@ async def device_configure(req: dict, client_ctx: ClientContext, core: Core) -> 
         return rep
 
     ciphered = from_jsonb64(rep["ciphered_user_privkey"])
-    box = SealedBox(user_privkey_cipherkey_privkey)
+    box = SealedBox(exchange_cipherkey_privkey)
     user_privkey_raw = box.decrypt(ciphered)
     user_privkey = PrivateKey(user_privkey_raw)
 
@@ -191,8 +189,8 @@ async def device_accept_configuration_try(req: dict, client_ctx: ClientContext, 
             "reason": "Bad response from backend: %r (%r)" % (rep, errors),
         }
 
-    user_privkey_cipherkey_raw = data["user_privkey_cipherkey"]
-    box = SealedBox(PublicKey(user_privkey_cipherkey_raw))
+    exchange_cipherkey_raw = data["exchange_cipherkey"]
+    box = SealedBox(PublicKey(exchange_cipherkey_raw))
     ciphered_user_privkey = box.encrypt(core.auth_device.user_privkey.encode())
 
     user_manifest_access_raw, _ = user_manifest_access_schema.dumps(

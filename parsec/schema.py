@@ -36,11 +36,14 @@ class BaseCmdSchema(UnknownCheckedSchema):
         super().__init__(**kwargs)
         self.drop_cmd_field = drop_cmd_field
 
-    def load(self, msg):
-        parsed_msg, errors = super().load(msg)
-        if errors:
-            raise InvalidCmd(errors)
-        return parsed_msg
+    # def load(self, msg, many=False, partial=False):
+    #     if many or partial:
+    #         raise NotImplementedError()
+
+    #     parsed_msg, errors = super().load(msg)
+    #     if errors:
+    #         raise InvalidCmd(errors)
+    #     return parsed_msg
 
     # TODO: remove this and use the load instead
     def load_or_abort(self, msg):

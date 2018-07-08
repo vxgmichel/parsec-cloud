@@ -17,7 +17,7 @@ class BackendGetConfigurationTrySchema(UnknownCheckedSchema):
     device_name = fields.String(required=True)
     configuration_status = fields.String(required=True)
     device_verify_key = fields.Base64Bytes(required=True)
-    user_privkey_cipherkey = fields.Base64Bytes(required=True)
+    exchange_cipherkey = fields.Base64Bytes(required=True)
 
 
 backend_get_configuration_try_schema = BackendGetConfigurationTrySchema()

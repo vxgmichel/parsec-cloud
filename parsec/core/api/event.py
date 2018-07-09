@@ -29,9 +29,11 @@ class cmd_EVENT_LISTEN_Schema(BaseCmdSchema):
 
 class cmd_EVENT_SUBSCRIBE_Schema(BaseCmdSchema):
     event = fields.String(
-        required=True, validate=validate.OneOf(
+        required=True,
+        validate=validate.OneOf(
             ("pinged", "fuse_mountpoint_need_stop", "new_sharing", "device_try_claim_submitted")
-    ))
+        ),
+    )
     subject = fields.String(missing=None)
 
 
@@ -43,7 +45,7 @@ async def event_subscribe(req: dict, client_ctx: ClientContext, core: Core) -> d
     msg = cmd_EVENT_SUBSCRIBE_Schema().load(req)
 
     try:
-        client_ctx.subscribe_signal(msg['event'], msg['subject'])
+        client_ctx.subscribe_signal(msg["event"], msg["subject"])
     except KeyError as exc:
         return {
             "status": "already_subscribed",
@@ -60,7 +62,7 @@ async def event_unsubscribe(req: dict, client_ctx: ClientContext, core: Core) ->
     msg = cmd_EVENT_SUBSCRIBE_Schema().load(req)
 
     try:
-        client_ctx.unsubscribe_signal(msg['event'], msg['subject'])
+        client_ctx.unsubscribe_signal(msg["event"], msg["subject"])
     except KeyError as exc:
         return {"status": "not_subscribed", "reason": "Not subscribed to this event/subject couple"}
 
@@ -84,7 +86,7 @@ async def event_listen(req: dict, client_ctx: ClientContext, core: Core) -> dict
             return {"status": "ok"}
 
     # TODO: make more generic
-    if event_msg['event'] == "device_try_claim_submitted":
+    if event_msg["event"] == "device_try_claim_submitted":
         config_try_id = event_msg["config_try_id"]
         try:
             rep = await core.backend_connection.send(

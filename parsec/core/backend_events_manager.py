@@ -81,8 +81,9 @@ class BackendEventsManager(BaseAsyncComponent):
         self._nursery = None
         self._backend_online_event = trio.Event()
         self._subscribed_events = {
-            ("message.received",), ("device.try_claim_submitted",),
-            ("pinged", None)
+            ("message.received",),
+            ("device.try_claim_submitted",),
+            ("pinged", None),
         }
         self._subscribed_events_changed = trio.Event()
         self._task_info = None
@@ -234,4 +235,4 @@ class BackendEventsManager(BaseAsyncComponent):
                         None, device_name=rep["device_name"], config_try_id=rep["config_try_id"]
                     )
                 else:
-                    logger.warning(f'Backend sent unknown event {rep}')
+                    logger.warning(f"Backend sent unknown event {rep}")

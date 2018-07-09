@@ -149,7 +149,7 @@ class BaseUserComponent:
                 claim_answered.set()
 
         with self._signal_device_try_claim_answered.connected_to(_on_claim_answered):
-            print('-----> send event ')
+            print("-----> send event ")
             self._signal_device_try_claim_submitted.send(
                 None,
                 author=client_ctx.id,

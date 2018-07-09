@@ -180,16 +180,20 @@ class ClientContext:
     def subscribe_signal(self, signal_name, arg=None):
 
         # TODO: remove the deprecated naming
-        if signal_name in ('device_try_claim_submitted', 'backend.device.try_claim_submitted'):
-            event_name = 'backend.device.try_claim_submitted'
+        if signal_name in ("device_try_claim_submitted", "backend.device.try_claim_submitted"):
+            event_name = "backend.device.try_claim_submitted"
 
             def _build_event_msg(device_name, config_try_id):
-                return {"event": signal_name, "device_name": device_name, "config_try_id": config_try_id}
+                return {
+                    "event": signal_name,
+                    "device_name": device_name,
+                    "config_try_id": config_try_id,
+                }
 
-            key = (event_name, )
+            key = (event_name,)
 
-        elif signal_name == 'pinged':
-            event_name = 'pinged'
+        elif signal_name == "pinged":
+            event_name = "pinged"
             expected_ping = arg
             key = (event_name, expected_ping)
 
@@ -216,12 +220,12 @@ class ClientContext:
         self.signal_ns.signal(event_name).connect(_handle_event, weak=True)
 
     def unsubscribe_signal(self, signal_name, arg=None):
-        if signal_name in ('device_try_claim_submitted', 'backend.device.try_claim_submitted'):
-            event_name = 'backend.device.try_claim_submitted'
-            key = (event_name, )
+        if signal_name in ("device_try_claim_submitted", "backend.device.try_claim_submitted"):
+            event_name = "backend.device.try_claim_submitted"
+            key = (event_name,)
 
-        elif signal_name == 'pinged':
-            event_name = 'pinged'
+        elif signal_name == "pinged":
+            event_name = "pinged"
             expected_ping = arg
             key = (event_name, expected_ping)
 

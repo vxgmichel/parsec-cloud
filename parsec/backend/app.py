@@ -224,7 +224,7 @@ class BackendApp:
         return await self.blockstore.api_blockstore_get(client_ctx, msg)
 
     async def _api_event_subscribe(self, client_ctx, msg):
-        print('==> SUBSCRIBE ', msg)
+        print("==> SUBSCRIBE ", msg)
         msg = cmd_EVENT_SUBSCRIBE_Schema().load_or_abort(msg)
         event = msg["event"]
 
@@ -246,7 +246,7 @@ class BackendApp:
                 return {"event": event, "index": index}
 
         elif event == "device.try_claim_submitted":
-            print('subscribe device.try_claim_submitted')
+            print("subscribe device.try_claim_submitted")
             key = event
 
             def _build_event_msg(author, user_id, device_name, config_try_id):

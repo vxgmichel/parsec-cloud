@@ -42,11 +42,11 @@ async def test_device_declare_then_accepted(
 
     # 1) Existing device start listening for device configuration
 
-    print('start listening')
+    print("start listening")
     await alice_core_sock.send({"cmd": "event_subscribe", "event": "device_try_claim_submitted"})
     rep = await alice_core_sock.recv()
     assert rep == {"status": "ok"}
-    print('listening ok')
+    print("listening ok")
 
     # 2) Wannabe device spawn core and start configuration
 

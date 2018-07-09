@@ -3,7 +3,6 @@ from hypothesis import strategies as st, note
 
 from parsec.utils import to_jsonb64, from_jsonb64
 
-from tests.common import connect_core, core_factory, bootstrap_device
 from tests.hypothesis.common import rule, failure_reproducer, reproduce_rule, FileOracle
 
 
@@ -14,7 +13,7 @@ PLAYGROUND_SIZE = BLOCK_SIZE * 10
 @pytest.mark.slow
 @pytest.mark.trio
 async def test_core_offline_restart_and_rwfile(
-    TrioDriverRuleBasedStateMachine, backend_addr, tmpdir
+    TrioDriverRuleBasedStateMachine, tmpdir, core_factory, core_sock_factory, device_factory
 ):
     class RestartCore(Exception):
         pass
@@ -22,21 +21,17 @@ async def test_core_offline_restart_and_rwfile(
     @failure_reproducer(
         """
 import pytest
-import os
 
 from parsec.utils import to_jsonb64, from_jsonb64
 
-from tests.common import connect_core, core_factory
 from tests.hypothesis.test_core_offline_restart_and_rwfile import FileOracle, BLOCK_SIZE,
 
 class RestartCore(Exception):
     pass
 
 @pytest.mark.trio
-async def test_reproduce(tmpdir, backend_addr, alice):
+async def test_reproduce(tmpdir, core_factory, core_sock_factory, alice):
     config = {{
-        "base_settings_path": tmpdir.strpath,
-        "backend_addr": backend_addr,
         "block_size": BLOCK_SIZE,
     }}
     bootstrapped = False
@@ -46,19 +41,23 @@ async def test_reproduce(tmpdir, backend_addr, alice):
 
     while not done:
         try:
-            async with core_factory(**config) as core:
+            core = core_factory(config=config)
+            try:
                 await core.login(alice)
                 if not bootstrapped:
                     await core.fs.file_create("/foo.txt")
                     bootstrapped = True
 
-                async with connect_core(core) as sock:
+                    sock = core_sock_factory(core)
                     while True:
                         afunc = next(to_run_rules, None)
                         if not afunc:
                             done = True
                             break
                         await afunc(sock, file_oracle)
+
+            finally:
+                await core.teardown()
 
         except RestartCore:
             pass
@@ -70,33 +69,34 @@ def rule_selector():
     )
     class CoreOfflineRestartAndRWFile(TrioDriverRuleBasedStateMachine):
         async def trio_runner(self, task_status):
+            device = device_factory()
             config = {
-                "base_settings_path": tmpdir.strpath,
-                "backend_addr": backend_addr,
                 "block_size": BLOCK_SIZE,
             }
-            device = bootstrap_device("alice", "dev1")
 
             self.sys_cmd = lambda x: self.communicator.send(("sys", x))
             self.core_cmd = lambda x: self.communicator.send(("core", x))
             self.file_oracle = FileOracle()
 
             async def run_core(on_ready):
-                async with core_factory(**config) as core:
-
+                core = await core_factory(devices=[device], config=config)
+                try:
                     await core.login(device)
-                    async with connect_core(core) as sock:
+                    sock = core_sock_factory(core)
 
-                        await on_ready(sock)
+                    await on_ready(sock)
 
-                        while True:
-                            target, msg = await self.communicator.trio_recv()
-                            if target == "core":
-                                await sock.send(msg)
-                                rep = await sock.recv()
-                                await self.communicator.trio_respond(rep)
-                            elif msg == "restart!":
-                                raise RestartCore()
+                    while True:
+                        target, msg = await self.communicator.trio_recv()
+                        if target == "core":
+                            await sock.send(msg)
+                            rep = await sock.recv()
+                            await self.communicator.trio_respond(rep)
+                        elif msg == "restart!":
+                            raise RestartCore()
+
+                finally:
+                    await core.teardown()
 
             async def bootstrap_core(sock):
                 await sock.send({"cmd": "file_create", "path": "/foo.txt"})

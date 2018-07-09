@@ -1,27 +1,26 @@
-import trio_asyncio
-import os
 import pytest
 import attr
+import os
 import socket
 import asyncpg
 import contextlib
 from unittest.mock import patch
+import trio
+import trio_asyncio
 import hypothesis
+from nacl.public import PrivateKey
+from nacl.signing import SigningKey
 
-from parsec.backend.exceptions import AlreadyExistsError as UserAlreadyExistsError
-from parsec.backend.drivers import postgresql as pg_driver
 from parsec.signals import Namespace as SignalNamespace
+from parsec.core import Core, CoreConfig
+from parsec.core.fs.data import new_access, new_workspace_manifest, remote_to_local_manifest
+from parsec.core.devices_manager import Device
+from parsec.backend import BackendApp, BackendConfig
+from parsec.backend.drivers import postgresql as pg_driver
+from parsec.backend.exceptions import AlreadyExistsError as UserAlreadyExistsError
+from parsec.handshake import ClientHandshake, AnonymousClientHandshake
 
-from tests.common import (
-    freeze_time,
-    run_app,
-    backend_factory,
-    core_factory,
-    connect_backend,
-    connect_core,
-    bootstrap_devices,
-    bootstrap_device,
-)
+from tests.common import freeze_time, FreezeTestOnBrokenStreamCookedSocket, InMemoryLocalDB
 from tests.open_tcp_stream_mock_wrapper import OpenTCPStreamMockWrapper
 
 
@@ -76,52 +75,6 @@ async def asyncio_loop():
         yield loop
 
 
-@pytest.fixture(params=["mocked", "postgresql"])
-async def backend_store(request, asyncio_loop):
-    if request.param == "postgresql":
-        if not pytest.config.getoption("--postgresql"):
-            pytest.skip("`--postgresql` option not provided")
-        url = get_postgresql_url()
-        try:
-            await pg_driver.handler.init_db(url, True)
-        except asyncpg.exceptions.InvalidCatalogNameError as exc:
-            raise RuntimeError(
-                "Is `parsec_test` a valid database in PostgreSQL ?\n"
-                "Running `psql -c 'CREATE DATABASE parsec_test;'` may fix this"
-            ) from exc
-        return url
-
-    else:
-        if pytest.config.getoption("--only-postgresql"):
-            pytest.skip("`--only-postgresql` option provided")
-        return "mocked://"
-
-
-@pytest.fixture
-def alice_devices():
-    return bootstrap_devices("alice", ("dev1", "dev2"))
-
-
-@pytest.fixture
-def alice(alice_devices):
-    return alice_devices[0]
-
-
-@pytest.fixture
-def alice2(alice_devices):
-    return alice_devices[1]
-
-
-@pytest.fixture
-def bob(alice_devices):
-    return bootstrap_device("bob", "dev1")
-
-
-@pytest.fixture
-def mallory(alice_devices):
-    return bootstrap_device("mallory", "dev1")
-
-
 @pytest.fixture
 def always_logs():
     """
@@ -150,8 +103,118 @@ def unused_tcp_addr(unused_tcp_port):
 
 
 @pytest.fixture
-def signal_ns():
-    return SignalNamespace()
+def signal_ns_factory():
+    return SignalNamespace
+
+
+@pytest.fixture
+def signal_ns(signal_ns_factory):
+    return signal_ns_factory()
+
+
+@pytest.fixture
+def tcp_stream_spy():
+    open_tcp_stream_mock_wrapper = OpenTCPStreamMockWrapper()
+    with patch("trio.open_tcp_stream", new=open_tcp_stream_mock_wrapper):
+        yield open_tcp_stream_mock_wrapper
+
+
+@pytest.fixture
+def monitor():
+    from tests.monitor import Monitor
+
+    return Monitor()
+
+
+@attr.s
+class AppServer:
+    entry_point = attr.ib()
+    addr = attr.ib()
+    connection_factory = attr.ib()
+
+
+@pytest.fixture
+def server_factory(nursery, tcp_stream_spy):
+    count = 0
+
+    def _server_factory(entry_point, url=None, nursery=nursery):
+        nonlocal count
+        count += 1
+
+        if not url:
+            url = f"tcp://server-{count}.placeholder.com:9999"
+
+        def connection_factory(*args, **kwargs):
+            right, left = trio.testing.memory_stream_pair()
+            nursery.start_soon(entry_point, left)
+            return right
+
+        tcp_stream_spy.push_hook(url, connection_factory)
+        return AppServer(entry_point, url, connection_factory)
+
+    return _server_factory
+
+
+@pytest.fixture
+def device_factory():
+    users = {}
+    devices = {}
+    count = 0
+
+    def _device_factory(user_id=None, device_name='dev1'):
+        nonlocal count
+        count += 1
+
+        if not user_id:
+            user_id = f'user-{count}'
+
+        device_id = f"{user_id}@{device_name}"
+        assert device_id not in devices
+
+        try:
+            user_privkey, user_manifest_access, user_manifest_v1 = users[user_id]
+        except KeyError:
+            user_privkey = PrivateKey.generate().encode()
+            with freeze_time("2000-01-01"):
+                user_manifest_v1 = remote_to_local_manifest(new_workspace_manifest(device_id))
+            user_manifest_v1["base_version"] = 1
+            user_manifest_access = new_access()
+            users[user_id] = (user_privkey, user_manifest_access, user_manifest_v1)
+
+        device_signkey = SigningKey.generate().encode()
+        device = Device(
+            "%s@%s" % (user_id, device_name),
+            user_privkey,
+            device_signkey,
+            user_manifest_access,
+            InMemoryLocalDB(),
+        )
+        device.local_db.set(user_manifest_access, user_manifest_v1)
+
+        devices[device_id] = device
+        return device
+
+    return _device_factory
+
+
+@pytest.fixture
+def alice(device_factory):
+    return device_factory("alice", "dev1")
+
+
+@pytest.fixture
+def alice2(device_factory):
+    return device_factory("alice", "dev2")
+
+
+@pytest.fixture
+def bob(device_factory):
+    return device_factory("bob", "dev1")
+
+
+@pytest.fixture
+def mallory(device_factory):
+    return device_factory("mallory", "dev1")
 
 
 @pytest.fixture
@@ -159,16 +222,39 @@ def default_devices(alice, alice2, bob):
     return (alice, alice2, bob)
 
 
+@pytest.fixture(params=["mocked", "postgresql"])
+async def backend_store(request, asyncio_loop):
+    if request.param == "postgresql":
+        if not pytest.config.getoption("--postgresql"):
+            pytest.skip("`--postgresql` option not provided")
+        url = get_postgresql_url()
+        try:
+            await pg_driver.handler.init_db(url, True)
+        except asyncpg.exceptions.InvalidCatalogNameError as exc:
+            raise RuntimeError(
+                "Is `parsec_test` a valid database in PostgreSQL ?\n"
+                "Running `psql -c 'CREATE DATABASE parsec_test;'` may fix this"
+            ) from exc
+        return url
+
+    else:
+        if pytest.config.getoption("--only-postgresql"):
+            pytest.skip("`--only-postgresql` option provided")
+        return "mocked://"
+
+
 @pytest.fixture
-async def backend(default_devices, backend_store, config={}):
-    async with backend_factory(
-        **{"blockstore_postgresql": True, "dburl": backend_store, **config}
-    ) as backend:
+def backend_factory(nursery, signal_ns_factory, backend_store, default_devices):
+    async def _backend_factory(devices=default_devices, signal_ns=None, nursery=nursery):
+        config = BackendConfig(blockstore_postgresql=True, dburl=backend_store)
+        if not signal_ns:
+            signal_ns = signal_ns_factory()
+        backend = BackendApp(config, signal_ns=signal_ns)
 
         # Need to initialize backend with users/devices, and for each user
         # store it user manifest
         with freeze_time("2000-01-01"):
-            for device in default_devices:
+            for device in devices:
                 try:
                     await backend.user.create(
                         author="<backend-fixture>",
@@ -193,7 +279,15 @@ async def backend(default_devices, backend_store, config={}):
                         verify_key=device.device_verifykey.encode(),
                     )
 
-        yield backend
+        await backend.init(nursery)
+        return backend
+
+    return _backend_factory
+
+
+@pytest.fixture
+async def backend(backend_factory):
+    return await backend_factory()
 
 
 @pytest.fixture
@@ -202,55 +296,74 @@ def backend_addr(tcp_stream_spy):
 
 
 @pytest.fixture
-def tcp_stream_spy():
-    open_tcp_stream_mock_wrapper = OpenTCPStreamMockWrapper()
-    with patch("trio.open_tcp_stream", new=open_tcp_stream_mock_wrapper):
-        yield open_tcp_stream_mock_wrapper
-
-
-@attr.s(frozen=True)
-class RunningBackendInfo:
-    backend = attr.ib()
-    addr = attr.ib()
-    connection_factory = attr.ib()
+def running_backend(server_factory, backend_addr, backend):
+    server = server_factory(backend.handle_client, backend_addr)
+    server.backend = backend
+    return server
 
 
 @pytest.fixture
-async def running_backend(request, tcp_stream_spy, backend, backend_addr):
-    async with run_app(backend) as backend_connection_factory:
-        with tcp_stream_spy.install_hook(backend_addr, backend_connection_factory):
-            yield RunningBackendInfo(backend, backend_addr, backend_connection_factory)
+def backend_connection_factory(server_factory, nursery):
+    async def _backend_connection_factory(backend, auth_as, nursery=nursery):
+        server = server_factory(backend.handle_client, nursery=nursery)
+        sockstream = server.connection_factory()
+        sock = FreezeTestOnBrokenStreamCookedSocket(sockstream)
+        if auth_as:
+            # Handshake
+            if auth_as == "anonymous":
+                ch = AnonymousClientHandshake()
+            else:
+                ch = ClientHandshake(auth_as.id, auth_as.device_signkey)
+            challenge_req = await sock.recv()
+            answer_req = ch.process_challenge_req(challenge_req)
+            await sock.send(answer_req)
+            result_req = await sock.recv()
+            ch.process_result_req(result_req)
+        return sock
+
+    return _backend_connection_factory
 
 
 @pytest.fixture
-async def alice_backend_sock(backend, alice):
-    async with connect_backend(backend, auth_as=alice) as sock:
-        yield sock
+async def anonymous_backend_sock(backend_connection_factory, backend):
+    return await backend_connection_factory(backend, "anonymous")
 
 
 @pytest.fixture
-async def bob_backend_sock(backend, bob):
-    async with connect_backend(backend, auth_as=bob) as sock:
-        yield sock
+async def alice_backend_sock(backend_connection_factory, backend, alice):
+    return await backend_connection_factory(backend, alice)
 
 
 @pytest.fixture
-async def anonymous_backend_sock(backend):
-    async with connect_backend(backend, auth_as="anonymous") as sock:
-        yield sock
+async def bob_backend_sock(backend_connection_factory, backend, bob):
+    return await backend_connection_factory(backend, bob)
 
 
 @pytest.fixture
-async def core(asyncio_loop, backend_addr, tmpdir, default_devices, config={}):
-    async with core_factory(
-        **{
-            "base_settings_path": tmpdir.mkdir("core_fixture").strpath,
-            "backend_addr": backend_addr,
-            **config,
-        }
-    ) as core:
+def core_factory(tmpdir, nursery, signal_ns_factory, backend_addr, default_devices):
+    count = 0
 
-        for device in default_devices:
+    async def _core_factory(
+        devices=default_devices, config={}, signal_ns=None, nursery=nursery
+    ):
+        nonlocal count
+        count += 1
+
+        core_dir = tmpdir / f"core-{count}"
+        config = CoreConfig(
+            **{
+                "backend_addr": backend_addr,
+                "local_storage_dir": (core_dir / "local_storage").strpath,
+                "base_settings_path": (core_dir / "settings").strpath,
+                **config
+            }
+        )
+        if not signal_ns:
+            signal_ns = signal_ns_factory()
+        core = Core(config, signal_ns=signal_ns)
+
+        await core.init(nursery)
+        for device in devices:
             core.devices_manager.register_new_device(
                 device.id,
                 device.user_privkey.encode(),
@@ -259,30 +372,24 @@ async def core(asyncio_loop, backend_addr, tmpdir, default_devices, config={}):
                 "<secret>",
             )
 
-        yield core
+        return core
+
+    return _core_factory
 
 
 @pytest.fixture
-async def core2(asyncio_loop, backend_addr, tmpdir, default_devices, config={}):
-    # TODO: refacto with core fixture
-    async with core_factory(
-        **{
-            "base_settings_path": tmpdir.mkdir("core2_fixture").strpath,
-            "backend_addr": backend_addr,
-            **config,
-        }
-    ) as core2:
+async def core(core_factory):
+    return await core_factory()
 
-        for device in default_devices:
-            core2.devices_manager.register_new_device(
-                device.id,
-                device.user_privkey.encode(),
-                device.device_signkey.encode(),
-                device.user_manifest_access,
-                "<secret>",
-            )
 
-        yield core2
+@pytest.fixture
+def core_sock_factory(server_factory, nursery):
+    def _core_sock_factory(core, nursery=nursery):
+        server = server_factory(core.handle_client, nursery=nursery)
+        sockstream = server.connection_factory()
+        return FreezeTestOnBrokenStreamCookedSocket(sockstream)
+
+    return _core_sock_factory
 
 
 @pytest.fixture
@@ -290,6 +397,16 @@ async def alice_core(core, alice):
     assert not core.auth_device, "Core already logged"
     await core.login(alice)
     return core
+
+
+@pytest.fixture
+async def alice_core_sock(core_sock_factory, alice_core):
+    return core_sock_factory(alice_core)
+
+
+@pytest.fixture
+async def core2(core_factory):
+    return await core_factory()
 
 
 @pytest.fixture
@@ -307,25 +424,10 @@ async def bob_core2(core2, bob):
 
 
 @pytest.fixture
-async def alice_core_sock(alice_core):
-    async with connect_core(alice_core) as sock:
-        yield sock
+async def alice2_core2_sock(core_sock_factory, alice2_core2):
+    return core_sock_factory(alice2_core2)
 
 
 @pytest.fixture
-async def alice2_core2_sock(alice2_core2):
-    async with connect_core(alice2_core2) as sock:
-        yield sock
-
-
-@pytest.fixture
-async def bob_core2_sock(bob_core2):
-    async with connect_core(bob_core2) as sock:
-        yield sock
-
-
-@pytest.fixture
-def monitor():
-    from tests.monitor import Monitor
-
-    return Monitor()
+async def bob_core2_sock(core_sock_factory, bob_core2):
+    return core_sock_factory(bob_core2)

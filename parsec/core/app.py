@@ -24,10 +24,10 @@ class NotLoggedError(Exception):
 
 
 class Core(BaseAsyncComponent):
-    def __init__(self, config):
+    def __init__(self, config, signal_ns=None):
         super().__init__()
         self.nursery = None
-        self.signal_ns = SignalNamespace()
+        self.signal_ns = signal_ns or SignalNamespace()
         self.devices_manager = DevicesManager(os.path.join(config.base_settings_path, "devices"))
 
         self.config = config

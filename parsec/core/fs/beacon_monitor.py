@@ -54,6 +54,9 @@ class BeaconMonitor(BaseAsyncComponent):
         entry_updated_signal = self.signal_ns.signal("fs.entry.updated")
 
         def _on_beacon_updated(sender, id, msg, author, date):
+            import pdb
+
+            pdb.set_trace()
             if author == self._device.device_id:
                 return
 

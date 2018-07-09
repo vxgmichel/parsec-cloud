@@ -1,6 +1,7 @@
 from collections import defaultdict
 from contextlib import contextmanager
 from unittest.mock import patch
+import inspect
 import trio
 
 
@@ -33,7 +34,10 @@ class OpenTCPStreamMockWrapper:
         addr = "tcp://%s:%s" % (host, port)
         hook = self._hooks.get(addr)
         if hook and addr not in self._offlines:
-            sock = await hook(host, port, **kwargs)
+            if inspect.iscoroutinefunction(hook):
+                sock = await hook(host, port, **kwargs)
+            else:
+                sock = hook(host, port, **kwargs)
         else:
             raise ConnectionRefusedError(111, "Connection refused")
 

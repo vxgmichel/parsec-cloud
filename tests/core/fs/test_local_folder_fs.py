@@ -16,7 +16,7 @@ from hypothesis import strategies as st
 from parsec.core.fs.local_folder_fs import LocalFolderFS, FSManifestLocalMiss
 from parsec.core.fs.data import new_access, new_local_file_manifest
 
-from tests.common import freeze_time, bootstrap_device
+from tests.common import freeze_time
 
 
 @pytest.fixture
@@ -134,7 +134,7 @@ class PathElement:
 
 
 @pytest.mark.slow
-def test_folder_operations(tmpdir, signal_ns, hypothesis_settings):
+def test_folder_operations(tmpdir, hypothesis_settings, signal_ns, device_factory):
     tentative = 0
 
     # The point is not to find breaking filenames here, so keep it simple
@@ -149,7 +149,7 @@ def test_folder_operations(tmpdir, signal_ns, hypothesis_settings):
             nonlocal tentative
             tentative += 1
 
-            self.device = bootstrap_device("alice", "dev1")
+            self.device = device_factory("alice", f"dev{tentative}")
             self.local_folder_fs = LocalFolderFS(self.device, signal_ns)
             self.folder_oracle = Path(tmpdir / f"oracle-test-{tentative}")
             self.folder_oracle.mkdir()

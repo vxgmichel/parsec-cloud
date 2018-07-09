@@ -16,14 +16,7 @@ def rule(**config):
         @wraps(fn)
         def wrapper(*args, **kwargs):
             print(red(bold("%s(%s)" % (fn.__name__, kwargs))))
-            try:
-                return fn(*args, **kwargs)
-
-            except AssertionError as exc:
-                import tests.hypothesis.test_core_online_tree_and_sync
-
-                # import pdb; pdb.set_trace()
-                raise
+            return fn(*args, **kwargs)
 
         return wrapper
 

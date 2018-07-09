@@ -8,7 +8,7 @@ from parsec.core.fs.local_file_fs import LocalFileFS, FSInvalidFileDescriptor, F
 from parsec.core.fs.data import new_access, new_local_file_manifest
 from parsec.core.local_db import LocalDBMissingEntry
 
-from tests.common import freeze_time, bootstrap_device
+from tests.common import freeze_time
 
 
 @pytest.fixture
@@ -157,7 +157,7 @@ def test_block_not_loaded_entry(alice, local_file_fs, foo_txt):
 
 
 @pytest.mark.slow
-def test_file_operations(tmpdir, signal_ns, hypothesis_settings):
+def test_file_operations(tmpdir, hypothesis_settings, signal_ns, device_factory):
     tentative = 0
 
     class FileOperationsStateMachine(RuleBasedStateMachine):
@@ -166,7 +166,7 @@ def test_file_operations(tmpdir, signal_ns, hypothesis_settings):
             nonlocal tentative
             tentative += 1
 
-            self.device = bootstrap_device("alice", "dev1")
+            self.device = device_factory("alice", f"dev{tentative}")
             self.local_file_fs = LocalFileFS(self.device, signal_ns)
             self.access = new_access()
             manifest = new_local_file_manifest(self.device.id)

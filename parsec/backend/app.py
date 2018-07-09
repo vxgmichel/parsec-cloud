@@ -116,8 +116,8 @@ class ClientContext:
 
 
 class BackendApp:
-    def __init__(self, config):
-        self.signal_ns = SignalNamespace()
+    def __init__(self, config, signal_ns=None):
+        self.signal_ns = signal_ns or SignalNamespace()
         self.config = config
         self.nursery = None
         self.blockstore_postgresql = config.blockstore_postgresql

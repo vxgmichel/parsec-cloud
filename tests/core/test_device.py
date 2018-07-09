@@ -28,6 +28,11 @@ async def test_device_cmd_backend_offline(core, alice_core_sock, cmd):
 async def test_device_declare_then_accepted(
     tmpdir, running_backend, backend_addr, core, alice, alice_core_sock
 ):
+    # -1) Make sure the core is connected to the backend, otherwise events
+    # will be randomly lost
+
+    await core.backend_events_manager.wait_backend_online()
+
     # 0) Initial device declare the new device
 
     await alice_core_sock.send({"cmd": "device_declare", "device_name": "device2"})
@@ -37,9 +42,11 @@ async def test_device_declare_then_accepted(
 
     # 1) Existing device start listening for device configuration
 
+    print('start listening')
     await alice_core_sock.send({"cmd": "event_subscribe", "event": "device_try_claim_submitted"})
     rep = await alice_core_sock.recv()
     assert rep == {"status": "ok"}
+    print('listening ok')
 
     # 2) Wannabe device spawn core and start configuration
 

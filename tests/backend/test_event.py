@@ -3,16 +3,16 @@ import trio
 
 
 @pytest.mark.trio
-async def test_event_subscribe(backend, alice_backend_sock):
+async def test_event_subscribe(alice_backend_sock):
     sock = alice_backend_sock
 
-    await sock.send({"cmd": "event_subscribe", "event": "ping", "ping": "foo"})
+    await sock.send({"cmd": "event_subscribe", "event": "pinged", "ping": "foo"})
     rep = await sock.recv()
     assert rep == {"status": "ok"}
 
 
 @pytest.mark.trio
-async def test_event_subscribe_unkown_event(backend, alice_backend_sock):
+async def test_event_subscribe_unkown_event(alice_backend_sock):
     sock = alice_backend_sock
 
     await sock.send({"cmd": "event_subscribe", "event": "foo"})
@@ -21,7 +21,7 @@ async def test_event_subscribe_unkown_event(backend, alice_backend_sock):
 
 
 async def subscribe_ping(sock, ping):
-    await sock.send({"cmd": "event_subscribe", "event": "ping", "ping": ping})
+    await sock.send({"cmd": "event_subscribe", "event": "pinged", "ping": ping})
     rep = await sock.recv()
     assert rep == {"status": "ok"}
 
@@ -33,28 +33,28 @@ async def ping(sock, subject):
 
 
 @pytest.mark.trio
-async def test_event_unsubscribe(backend, alice_backend_sock):
+async def test_event_unsubscribe(alice_backend_sock):
     sock = alice_backend_sock
 
     await subscribe_ping(sock, "foo")
 
-    await sock.send({"cmd": "event_unsubscribe", "event": "ping", "ping": "foo"})
+    await sock.send({"cmd": "event_unsubscribe", "event": "pinged", "ping": "foo"})
     rep = await sock.recv()
     assert rep == {"status": "ok"}
 
 
 @pytest.mark.trio
-async def test_event_unsubscribe_ping_bad_msg(backend, alice_backend_sock):
+async def test_event_unsubscribe_ping_bad_msg(alice_backend_sock):
     sock = alice_backend_sock
 
     await subscribe_ping(sock, "foo")
-    await sock.send({"cmd": "event_unsubscribe", "event": "ping", "ping": "bar"})
+    await sock.send({"cmd": "event_unsubscribe", "event": "pinged", "ping": "bar"})
     rep = await sock.recv()
-    assert rep == {"status": "not_subscribed", "reason": "Not subscribed to ('ping', 'bar')"}
+    assert rep == {"status": "not_subscribed", "reason": "Not subscribed to ('pinged', 'bar')"}
 
 
 @pytest.mark.trio
-async def test_event_unsubscribe_bad_event(backend, alice_backend_sock):
+async def test_event_unsubscribe_bad_event(alice_backend_sock):
     sock = alice_backend_sock
 
     await sock.send({"cmd": "event_unsubscribe", "event": "message.received"})
@@ -63,7 +63,7 @@ async def test_event_unsubscribe_bad_event(backend, alice_backend_sock):
 
 
 @pytest.mark.trio
-async def test_event_unsubscribe_unknown_event(backend, alice_backend_sock):
+async def test_event_unsubscribe_unknown_event(alice_backend_sock):
     sock = alice_backend_sock
 
     await sock.send({"cmd": "event_unsubscribe", "event": "unknown"})
@@ -72,7 +72,7 @@ async def test_event_unsubscribe_unknown_event(backend, alice_backend_sock):
 
 
 @pytest.mark.trio
-async def test_ignore_own_events(backend, alice_backend_sock):
+async def test_ignore_own_events(alice_backend_sock):
     sock = alice_backend_sock
 
     await subscribe_ping(sock, "foo")
@@ -85,7 +85,7 @@ async def test_ignore_own_events(backend, alice_backend_sock):
 
 
 @pytest.mark.trio
-async def test_event_listen(backend, alice_backend_sock, bob_backend_sock):
+async def test_event_listen(alice_backend_sock, bob_backend_sock):
     alice_sock, bob_sock = alice_backend_sock, bob_backend_sock
 
     await alice_sock.send({"cmd": "event_listen", "wait": False})
@@ -101,13 +101,13 @@ async def test_event_listen(backend, alice_backend_sock, bob_backend_sock):
 
     with trio.fail_after(1):
         rep = await alice_sock.recv()
-    assert rep == {"status": "ok", "author": "bob@dev1", "event": "ping", "ping": "foo"}
+    assert rep == {"status": "ok", "event": "pinged", "ping": "foo"}
 
     await ping(bob_sock, "foo")
 
     await alice_sock.send({"cmd": "event_listen", "wait": False})
     rep = await alice_sock.recv()
-    assert rep == {"status": "ok", "author": "bob@dev1", "event": "ping", "ping": "foo"}
+    assert rep == {"status": "ok", "event": "pinged", "ping": "foo"}
 
     await alice_sock.send({"cmd": "event_listen", "wait": False})
     rep = await alice_sock.recv()

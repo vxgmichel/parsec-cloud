@@ -187,22 +187,36 @@ class ClientContext:
 
     # TODO: rework this
     def subscribe_signal(self, signal_name, subject=ANY):
-        key = (signal_name, subject)
+
+        if signal_name == 'device_try_claim_submitted':
+            internal_signal_name = 'backend.device.try_claim_submitted'
+            key = signal_name
+        else:
+            raise NotImplementedError()
+            internal_signal_name = signal_name
+            key = (signal_name, subject)
+
         if key in self.registered_signals:
-            raise KeyError("%s@%s already subscribed" % key)
+            raise KeyError(f"{key} already subscribed")
 
         def _handle_event(sender, **kwargs):
             if subject and kwargs["subject"] != subject:
                 return
+
+            assert signal_name == 'device_try_claim_submitted'
+
             try:
-                self.received_signals.put_nowait((signal_name, sender, kwargs))
+                self.received_signals.put_nowait((signal_name, kwargs))
             except trio.WouldBlock:
                 logger.warning("{!r}: event queue is full", self)
 
         self.registered_signals[key] = _handle_event
-        self.signal_ns.signal(signal_name).connect(_handle_event, weak=True)
+        self.signal_ns.signal(internal_signal_name).connect(_handle_event, weak=True)
 
     def unsubscribe_signal(self, signal_name, subject=ANY):
-        key = (signal_name, subject)
+        if signal_name == 'device_try_claim_submitted':
+            key = signal_name
+        else:
+            key = (signal_name, subject)
         # Weakref on _handle_event in signal connection will do the rest
         del self.registered_signals[key]

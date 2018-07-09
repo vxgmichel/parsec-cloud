@@ -29,8 +29,9 @@ class cmd_EVENT_LISTEN_Schema(BaseCmdSchema):
 
 class cmd_EVENT_SUBSCRIBE_Schema(BaseCmdSchema):
     event = fields.String(
-        required=True, validate=validate.OneOf(ALLOWED_SIGNALS | ALLOWED_BACKEND_EVENTS)
-    )
+        required=True, validate=validate.OneOf(
+            ("ping", "fuse_mountpoint_need_stop", "new_sharing", "device_try_claim_submitted")
+    ))
     subject = fields.String(missing=None)
 
 
@@ -49,24 +50,6 @@ async def event_subscribe(req: dict, client_ctx: ClientContext, core: Core) -> d
             "status": "already_subscribed",
             "reason": "Already subscribed to this event/subject couple",
         }
-
-    if event in ALLOWED_BACKEND_EVENTS:
-        core.signal_ns.signal("backend.event.subscribe").send(
-            core.auth_device.id, event=event, subject=subject
-        )
-
-        backend_event_manager_restarted = trio.Event()
-
-        key = (event, subject)
-
-        def _on_backend_event_subscribed(sender, events):
-            if key in events:
-                backend_event_manager_restarted.set()
-
-        with core.signal_ns.signal("backend.event.subscribed").temporarily_connected_to(
-            _on_backend_event_subscribed
-        ):
-            await backend_event_manager_restarted.wait()
 
     return {"status": "ok"}
 
@@ -100,10 +83,10 @@ async def event_listen(req: dict, client_ctx: ClientContext, core: Core) -> dict
 
     msg = cmd_EVENT_LISTEN_Schema().load(req)
     if msg["wait"]:
-        event, subject, kwargs = await client_ctx.received_signals.get()
+        event, kwargs = await client_ctx.received_signals.get()
     else:
         try:
-            event, subject, kwargs = client_ctx.received_signals.get_nowait()
+            event, kwargs = client_ctx.received_signals.get_nowait()
         except trio.WouldBlock:
             return {"status": "ok"}
 
@@ -124,10 +107,7 @@ async def event_listen(req: dict, client_ctx: ClientContext, core: Core) -> dict
                 "reason": "Bad response from backend: %r (%r)" % (rep, errors),
             }
 
-        return {"status": "ok", **kwargs}
-
-    else:
-        return {"status": "ok", "event": event, "subject": subject, **kwargs}
+    return {"status": "ok", "event": event, **kwargs}
 
 
 async def event_list_subscribed(req: dict, client_ctx: ClientContext, core: Core) -> dict:

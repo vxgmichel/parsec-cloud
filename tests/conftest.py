@@ -216,7 +216,7 @@ class RunningBackendInfo:
 
 
 @pytest.fixture
-async def running_backend(tcp_stream_spy, backend, backend_addr):
+async def running_backend(request, tcp_stream_spy, backend, backend_addr):
     async with run_app(backend) as backend_connection_factory:
         with tcp_stream_spy.install_hook(backend_addr, backend_connection_factory):
             yield RunningBackendInfo(backend, backend_addr, backend_connection_factory)

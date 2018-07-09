@@ -80,7 +80,10 @@ class BackendEventsManager(BaseAsyncComponent):
         self.signal_ns = signal_ns
         self._nursery = None
         self._backend_online_event = trio.Event()
-        self._subscribed_events = {("message.received",), ("device.try_claim_submitted",)}
+        self._subscribed_events = {
+            ("message.received",), ("device.try_claim_submitted",),
+            ("pinged",)
+        }
         self._subscribed_events_changed = trio.Event()
         self._task_info = None
         self.signal_ns.signal("backend.beacon.listen").connect(self._on_beacon_listen, weak=True)
@@ -203,8 +206,8 @@ class BackendEventsManager(BaseAsyncComponent):
                 payload = {"cmd": "event_subscribe", "event": args[0]}
                 if payload["event"] == "beacon.updated":
                     payload["beacon_id"] = args[1]
-                elif payload["event"] == "ping":
-                    payload["ping"] = args[1]
+                elif payload["event"] == "pinged":
+                    payload["pinged"] = args[1]
                 await sock.send(payload)
                 rep = await sock.recv()
                 if rep.get("status") != "ok":
@@ -222,8 +225,8 @@ class BackendEventsManager(BaseAsyncComponent):
 
                 if rep["event"] == "message.received":
                     self.signal_ns.signal("backend.message.received").send(None, index=rep["index"])
-                elif rep["event"] == "ping":
-                    self.signal_ns.signal("backend.ping").send(None, ping=rep["ping"])
+                elif rep["event"] == "pinged":
+                    self.signal_ns.signal("backend.pinged").send(None, ping=rep["ping"])
                 elif rep["event"] == "beacon.updated":
                     self.signal_ns.signal("backend.beacon.updated").send(
                         None, beacon_id=rep["beacon_id"], index=rep["index"]
@@ -232,3 +235,5 @@ class BackendEventsManager(BaseAsyncComponent):
                     self.signal_ns.signal("backend.device.try_claim_submitted").send(
                         None, device_name=rep["device_name"], config_try_id=rep["config_try_id"]
                     )
+                else:
+                    logger.warning(f'Backend sent unknown event {rep}')

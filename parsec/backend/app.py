@@ -69,7 +69,7 @@ class cmd_EVENT_SUBSCRIBE_DeviceTryclaimSubmittedSchema(BaseCmdSchema):
 
 
 class cmd_EVENT_SUBSCRIBE_PingedSchema(BaseCmdSchema):
-    event = fields.CheckedConstant("ping")
+    event = fields.CheckedConstant("pinged")
     ping = fields.String(required=True)
 
 
@@ -80,7 +80,7 @@ class cmd_EVENT_SUBSCRIBE_Schema(BaseCmdSchema, OneOfSchema):
         "beacon.updated": cmd_EVENT_SUBSCRIBE_BeaconUpdatedSchema(),
         "message.received": cmd_EVENT_SUBSCRIBE_MessageReceivedSchema(),
         "device.try_claim_submitted": cmd_EVENT_SUBSCRIBE_DeviceTryclaimSubmittedSchema(),
-        "ping": cmd_EVENT_SUBSCRIBE_PingedSchema(),  # TODO: rename to "pinged"
+        "pinged": cmd_EVENT_SUBSCRIBE_PingedSchema(),  # TODO: rename to "pinged"
     }
 
     def get_obj_type(self, obj):
@@ -208,7 +208,7 @@ class BackendApp:
 
     async def _api_ping(self, client_ctx, msg):
         msg = cmd_PING_Schema().load_or_abort(msg)
-        self.signal_ns.signal("ping").send(client_ctx.id, author=client_ctx.id, ping=msg["ping"])
+        self.signal_ns.signal("pinged").send(client_ctx.id, author=client_ctx.id, ping=msg["ping"])
         return {"status": "ok", "pong": msg["ping"]}
 
     async def _api_blockstore_post(self, client_ctx, msg):
@@ -224,6 +224,7 @@ class BackendApp:
         return await self.blockstore.api_blockstore_get(client_ctx, msg)
 
     async def _api_event_subscribe(self, client_ctx, msg):
+        print('==> SUBSCRIBE ', msg)
         msg = cmd_EVENT_SUBSCRIBE_Schema().load_or_abort(msg)
         event = msg["event"]
 
@@ -245,6 +246,7 @@ class BackendApp:
                 return {"event": event, "index": index}
 
         elif event == "device.try_claim_submitted":
+            print('subscribe device.try_claim_submitted')
             key = event
 
             def _build_event_msg(author, user_id, device_name, config_try_id):
@@ -252,14 +254,14 @@ class BackendApp:
                     return None
                 return {"event": event, "device_name": device_name, "config_try_id": config_try_id}
 
-        elif event == "ping":
+        elif event == "pinged":
             expected_ping = msg["ping"]
             key = (event, expected_ping)
 
             def _build_event_msg(author, ping):
                 if ping != expected_ping:
                     return None
-                return {"event": event, "author": author, "ping": ping}
+                return {"event": event, "ping": ping}
 
         def _handle_event(sender, author, **kwargs):
             if author == client_ctx.id:
@@ -277,7 +279,7 @@ class BackendApp:
 
     async def _api_event_unsubscribe(self, client_ctx, msg):
         msg = cmd_EVENT_SUBSCRIBE_Schema().load_or_abort(msg)
-        if msg["event"] == "ping":
+        if msg["event"] == "pinged":
             key = (msg["event"], msg["ping"])
         elif msg["event"] == "beacon.updated":
             key = (msg["event"], msg["beacon_id"])

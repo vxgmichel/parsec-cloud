@@ -20,11 +20,6 @@ async def backend_event_manager(nursery, signal_ns, running_backend, alice):
         await em.teardown()
 
 
-# async def listen_beacon(signal_ns, beacon_id):
-#     async with wait_event_subscribed(signal_ns, {(event, subject)}):
-#         signal_ns.signal("backend.event.subscribe").send(device.id, event=event, subject=subject)
-
-
 @asynccontextmanager
 async def wait_event_subscribed(signal_ns, events):
     default_events = {("message.received",), ("device.try_claim_submitted",)}

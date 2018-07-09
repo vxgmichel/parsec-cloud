@@ -24,6 +24,7 @@ class InvalidCmd(Exception):
 
 
 class BaseCmdSchema(UnknownCheckedSchema):
+
     cmd = fields.String(required=True)
 
     @post_load
@@ -36,14 +37,15 @@ class BaseCmdSchema(UnknownCheckedSchema):
         super().__init__(**kwargs)
         self.drop_cmd_field = drop_cmd_field
 
-    # def load(self, msg, many=False, partial=False):
-    #     if many or partial:
-    #         raise NotImplementedError()
+    def load(self, msg, **kwargs):
+        # TODO: big hack to work around cmd_EVENT_SUBSCRIBE_Schema using OneOfSchema
+        if kwargs:
+            return super().load(msg)
 
-    #     parsed_msg, errors = super().load(msg)
-    #     if errors:
-    #         raise InvalidCmd(errors)
-    #     return parsed_msg
+        parsed_msg, errors = super().load(msg)
+        if errors:
+            raise InvalidCmd(errors)
+        return parsed_msg
 
     # TODO: remove this and use the load instead
     def load_or_abort(self, msg):

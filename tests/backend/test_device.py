@@ -91,10 +91,8 @@ async def test_device_configure(
     assert rep == {
         "status": "ok",
         "event": "device.try_claim_submitted",
-        "user_id": "alice",
         "device_name": "phone2",
         "config_try_id": "<config_try_id>",
-        "author": "anonymous",
     }
 
     # 4) Existing device retreive configuration try informations
@@ -172,8 +170,6 @@ async def test_device_configure_and_get_refused(
     assert rep == {
         "status": "ok",
         "event": "device.try_claim_submitted",
-        "author": "anonymous",
-        "user_id": "alice",
         "device_name": "phone2",
         "config_try_id": "<config_try_id>",
     }

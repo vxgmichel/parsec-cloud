@@ -65,7 +65,7 @@ class SyncMonitor(BaseAsyncComponent):
                 last_updated = timestamp()
             except KeyError:
                 first_updated = last_updated = timestamp()
-            print(id, "updated")
+            print("UDPATED", self, id)
             updated_entries[id] = (first_updated, last_updated)
             new_event.set()
 

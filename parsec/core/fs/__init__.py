@@ -14,6 +14,7 @@ from parsec.core.fs.remote_loader import RemoteLoader
 
 class FS:
     def __init__(self, device, backend_conn, signal_ns):
+        self.signal_ns = signal_ns
         self._device = device
 
         self._local_file_fs = LocalFileFS(device, signal_ns)

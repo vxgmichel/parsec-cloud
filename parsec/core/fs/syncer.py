@@ -48,6 +48,9 @@ class Syncer:
             try:
                 manifest = self._local_manifest_fs.get_manifest(access)
             except LocalDBMissingEntry:
+                # TODO: make the assert true...
+                # # Root should always be loaded
+                # assert access is not self._local_manifest_fs.root_access
                 return
 
             if is_folder_manifest(manifest):
@@ -64,6 +67,14 @@ class Syncer:
 
     async def full_sync(self):
         local_entries = self._get_group_check_local_entries()
+
+        if not local_entries:
+            # Nothing in local, so everything is synced ! ;-)
+            self.signal_ns.signal("fs.entry.synced").send(
+                None, path="/", id=self.device.user_manifest_access["id"]
+            )
+            return
+
         need_sync_entries = await self._backend_vlob_group_check(local_entries)
         for chaned_item in need_sync_entries["changed"]:
             await self.sync_by_id(chaned_item["id"])
@@ -129,7 +140,7 @@ class Syncer:
         if is_file_manifest(manifest):
             if not manifest["need_sync"]:
                 self._local_manifest_fs.mark_outdated_manifest(access)
-                self.signal_ns.signal("fs.entry.synced").send("local", path=path, id=access["id"])
+                self.signal_ns.signal("fs.entry.synced").send(None, path=path, id=access["id"])
                 print("sync file oudating entry", access["id"])
                 return
 
@@ -194,8 +205,9 @@ class Syncer:
             # If recursive=False, placeholder are stored in parent but not resolved...
 
             if not manifest["need_sync"]:
+                # TODO: User manifest should always be loaded
                 self._local_manifest_fs.mark_outdated_manifest(access)
-                self.signal_ns.signal("fs.entry.synced").send("local", path=path, id=access["id"])
+                self.signal_ns.signal("fs.entry.synced").send(None, path=path, id=access["id"])
                 print("sync folder, oudating marked", access["id"])
                 return
 
@@ -227,4 +239,4 @@ class Syncer:
             self._local_manifest_fs.set_manifest(access, updated_manifest)
 
         print(" ********************** send signal to ", id(self.signal_ns))
-        self.signal_ns.signal("fs.entry.synced").send("local", path=path, id=access["id"])
+        self.signal_ns.signal("fs.entry.synced").send(None, path=path, id=access["id"])

@@ -271,10 +271,10 @@ async def core2(asyncio_loop, backend_addr, tmpdir, default_devices, config={}):
             "backend_addr": backend_addr,
             **config,
         }
-    ) as core:
+    ) as core2:
 
         for device in default_devices:
-            core.devices_manager.register_new_device(
+            core2.devices_manager.register_new_device(
                 device.id,
                 device.user_privkey.encode(),
                 device.device_signkey.encode(),
@@ -282,7 +282,7 @@ async def core2(asyncio_loop, backend_addr, tmpdir, default_devices, config={}):
                 "<secret>",
             )
 
-        yield core
+        yield core2
 
 
 @pytest.fixture

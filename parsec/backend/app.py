@@ -70,7 +70,7 @@ class cmd_EVENT_SUBSCRIBE_DeviceTryclaimSubmittedSchema(BaseCmdSchema):
 
 class cmd_EVENT_SUBSCRIBE_PingedSchema(BaseCmdSchema):
     event = fields.CheckedConstant("pinged")
-    ping = fields.String(required=True)
+    ping = fields.String(missing=None)
 
 
 class cmd_EVENT_SUBSCRIBE_Schema(BaseCmdSchema, OneOfSchema):
@@ -259,7 +259,7 @@ class BackendApp:
             key = (event, expected_ping)
 
             def _build_event_msg(author, ping):
-                if ping != expected_ping:
+                if expected_ping and ping != expected_ping:
                     return None
                 return {"event": event, "ping": ping}
 

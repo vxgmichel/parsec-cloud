@@ -30,7 +30,7 @@ class cmd_EVENT_LISTEN_Schema(BaseCmdSchema):
 class cmd_EVENT_SUBSCRIBE_Schema(BaseCmdSchema):
     event = fields.String(
         required=True, validate=validate.OneOf(
-            ("ping", "fuse_mountpoint_need_stop", "new_sharing", "device_try_claim_submitted")
+            ("pinged", "fuse_mountpoint_need_stop", "new_sharing", "device_try_claim_submitted")
     ))
     subject = fields.String(missing=None)
 
@@ -39,12 +39,11 @@ async def event_subscribe(req: dict, client_ctx: ClientContext, core: Core) -> d
     if not core.auth_device:
         return {"status": "login_required", "reason": "Login required"}
 
+    # TODO: change this api along with front
     msg = cmd_EVENT_SUBSCRIBE_Schema().load(req)
-    event = msg["event"]
-    subject = msg["subject"]
 
     try:
-        client_ctx.subscribe_signal(event, subject)
+        client_ctx.subscribe_signal(msg['event'], msg['subject'])
     except KeyError as exc:
         return {
             "status": "already_subscribed",
@@ -59,15 +58,9 @@ async def event_unsubscribe(req: dict, client_ctx: ClientContext, core: Core) ->
         return {"status": "login_required", "reason": "Login required"}
 
     msg = cmd_EVENT_SUBSCRIBE_Schema().load(req)
-    event = msg["event"]
-    subject = msg["subject"]
 
     try:
-        # Note here we consider `None` as `blinker.ANY` for simplicity sake
-        if subject:
-            client_ctx.unsubscribe_signal(event, subject)
-        else:
-            client_ctx.unsubscribe_signal(event)
+        client_ctx.unsubscribe_signal(msg['event'], msg['subject'])
     except KeyError as exc:
         return {"status": "not_subscribed", "reason": "Not subscribed to this event/subject couple"}
 
@@ -83,16 +76,16 @@ async def event_listen(req: dict, client_ctx: ClientContext, core: Core) -> dict
 
     msg = cmd_EVENT_LISTEN_Schema().load(req)
     if msg["wait"]:
-        event, kwargs = await client_ctx.received_signals.get()
+        event_msg = await client_ctx.received_signals.get()
     else:
         try:
-            event, kwargs = client_ctx.received_signals.get_nowait()
+            event_msg = client_ctx.received_signals.get_nowait()
         except trio.WouldBlock:
             return {"status": "ok"}
 
     # TODO: make more generic
-    if event == "device_try_claim_submitted":
-        config_try_id = kwargs["config_try_id"]
+    if event_msg['event'] == "device_try_claim_submitted":
+        config_try_id = event_msg["config_try_id"]
         try:
             rep = await core.backend_connection.send(
                 {"cmd": "device_get_configuration_try", "config_try_id": config_try_id}
@@ -107,7 +100,7 @@ async def event_listen(req: dict, client_ctx: ClientContext, core: Core) -> dict
                 "reason": "Bad response from backend: %r (%r)" % (rep, errors),
             }
 
-    return {"status": "ok", "event": event, **kwargs}
+    return {"status": "ok", **event_msg}
 
 
 async def event_list_subscribed(req: dict, client_ctx: ClientContext, core: Core) -> dict:

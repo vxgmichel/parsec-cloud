@@ -3,22 +3,13 @@ import trio
 import attr
 import logbook
 
-from parsec.signals import Namespace as SignalNamespace, ANY
+from parsec.signals import Namespace as SignalNamespace
 from parsec.networking import serve_client
 from parsec.core.base import BaseAsyncComponent, NotInitializedError
-from parsec.core.sharing import Sharing
 from parsec.core.fs import FS
-from parsec.core.synchronizer import Synchronizer
-from parsec.core.remote_listener import RemoteListener
 from parsec.core.devices_manager import DevicesManager
 from parsec.core.backend_cmds_sender import BackendCmdsSender
 from parsec.core.backend_events_manager import BackendEventsManager
-from parsec.core.fuse_manager import FuseManager
-from parsec.core.local_storage import LocalStorage
-from parsec.core.backend_storage import BackendStorage
-from parsec.core.manifests_manager import ManifestsManager
-from parsec.core.blocks_manager import BlocksManager
-from parsec.core.encryption_manager import EncryptionManager
 
 
 logger = logbook.Logger("parsec.core.app")
@@ -186,37 +177,56 @@ class ClientContext:
     received_signals = attr.ib(default=attr.Factory(lambda: trio.Queue(100)))
 
     # TODO: rework this
-    def subscribe_signal(self, signal_name, subject=ANY):
+    def subscribe_signal(self, signal_name, arg=None):
 
-        if signal_name == 'device_try_claim_submitted':
-            internal_signal_name = 'backend.device.try_claim_submitted'
-            key = signal_name
+        # TODO: remove the deprecated naming
+        if signal_name in ('device_try_claim_submitted', 'backend.device.try_claim_submitted'):
+            event_name = 'backend.device.try_claim_submitted'
+
+            def _build_event_msg(device_name, config_try_id):
+                return {"event": signal_name, "device_name": device_name, "config_try_id": config_try_id}
+
+            key = (event_name, )
+
+        elif signal_name == 'pinged':
+            event_name = 'pinged'
+            expected_ping = arg
+            key = (event_name, expected_ping)
+
+            def _build_event_msg(ping):
+                if ping != expected_ping:
+                    return None
+                return {"event": signal_name, "ping": ping}
+
         else:
             raise NotImplementedError()
-            internal_signal_name = signal_name
-            key = (signal_name, subject)
 
         if key in self.registered_signals:
             raise KeyError(f"{key} already subscribed")
 
         def _handle_event(sender, **kwargs):
-            if subject and kwargs["subject"] != subject:
-                return
-
-            assert signal_name == 'device_try_claim_submitted'
-
             try:
-                self.received_signals.put_nowait((signal_name, kwargs))
+                msg = _build_event_msg(**kwargs)
+                if msg:
+                    self.received_signals.put_nowait(msg)
             except trio.WouldBlock:
-                logger.warning("{!r}: event queue is full", self)
+                logger.warning(f"Event queue is full for {self.id}")
 
         self.registered_signals[key] = _handle_event
-        self.signal_ns.signal(internal_signal_name).connect(_handle_event, weak=True)
+        self.signal_ns.signal(event_name).connect(_handle_event, weak=True)
 
-    def unsubscribe_signal(self, signal_name, subject=ANY):
-        if signal_name == 'device_try_claim_submitted':
-            key = signal_name
+    def unsubscribe_signal(self, signal_name, arg=None):
+        if signal_name in ('device_try_claim_submitted', 'backend.device.try_claim_submitted'):
+            event_name = 'backend.device.try_claim_submitted'
+            key = (event_name, )
+
+        elif signal_name == 'pinged':
+            event_name = 'pinged'
+            expected_ping = arg
+            key = (event_name, expected_ping)
+
         else:
-            key = (signal_name, subject)
+            raise NotImplementedError()
+
         # Weakref on _handle_event in signal connection will do the rest
         del self.registered_signals[key]

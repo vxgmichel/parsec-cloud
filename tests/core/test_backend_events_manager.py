@@ -22,7 +22,7 @@ async def backend_event_manager(nursery, signal_ns, running_backend, alice):
 
 @asynccontextmanager
 async def wait_event_subscribed(signal_ns, events):
-    default_events = {("message.received",), ("device.try_claim_submitted",)}
+    default_events = {("message.received",), ("device.try_claim_submitted",), ("pinged", None)}
     expected_events = default_events | set(events)
 
     event_subscribed = connect_signal_as_event(signal_ns, "backend.listener.restarted")

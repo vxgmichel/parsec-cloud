@@ -82,7 +82,7 @@ class BackendEventsManager(BaseAsyncComponent):
         self._backend_online_event = trio.Event()
         self._subscribed_events = {
             ("message.received",), ("device.try_claim_submitted",),
-            ("pinged",)
+            ("pinged", None)
         }
         self._subscribed_events_changed = trio.Event()
         self._task_info = None
@@ -206,8 +206,6 @@ class BackendEventsManager(BaseAsyncComponent):
                 payload = {"cmd": "event_subscribe", "event": args[0]}
                 if payload["event"] == "beacon.updated":
                     payload["beacon_id"] = args[1]
-                elif payload["event"] == "pinged":
-                    payload["pinged"] = args[1]
                 await sock.send(payload)
                 rep = await sock.recv()
                 if rep.get("status") != "ok":
@@ -226,7 +224,7 @@ class BackendEventsManager(BaseAsyncComponent):
                 if rep["event"] == "message.received":
                     self.signal_ns.signal("backend.message.received").send(None, index=rep["index"])
                 elif rep["event"] == "pinged":
-                    self.signal_ns.signal("backend.pinged").send(None, ping=rep["ping"])
+                    self.signal_ns.signal("backend.pinged").send(None)
                 elif rep["event"] == "beacon.updated":
                     self.signal_ns.signal("backend.beacon.updated").send(
                         None, beacon_id=rep["beacon_id"], index=rep["index"]

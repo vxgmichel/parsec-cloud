@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from parsec.utils import to_jsonb64
 
-from tests.common import freeze_time, connect_backend
+from tests.common import freeze_time
 
 
 @pytest.fixture
@@ -99,26 +99,27 @@ async def test_user_claim_too_old_token(anonymous_backend_sock, invitation_token
 
 
 @pytest.mark.trio
-async def test_user_claim_token(backend, alice, invitation_token, mallory):
-    async with connect_backend(backend, auth_as="anonymous") as sock:
-        with freeze_time("2017-07-07T00:59:00"):
-            await sock.send(
-                {
-                    "cmd": "user_claim",
-                    "user_id": mallory.user_id,
-                    "invitation_token": invitation_token,
-                    "broadcast_key": to_jsonb64(mallory.user_pubkey.encode()),
-                    "device_name": mallory.device_name,
-                    "device_verify_key": to_jsonb64(mallory.device_verifykey.encode()),
-                }
-            )
-            rep = await sock.recv()
+async def test_user_claim_token(
+    backend, alice, invitation_token, mallory, anonymous_backend_sock, backend_sock_factory
+):
+    with freeze_time("2017-07-07T00:59:00"):
+        await anonymous_backend_sock.send(
+            {
+                "cmd": "user_claim",
+                "user_id": mallory.user_id,
+                "invitation_token": invitation_token,
+                "broadcast_key": to_jsonb64(mallory.user_pubkey.encode()),
+                "device_name": mallory.device_name,
+                "device_verify_key": to_jsonb64(mallory.device_verifykey.encode()),
+            }
+        )
+        rep = await anonymous_backend_sock.recv()
     assert rep == {"status": "ok"}
 
     # Finally make sure this user is accepted by the backend
-    async with connect_backend(backend, auth_as=mallory) as sock:
-        await sock.send({"cmd": "user_get", "user_id": "mallory"})
-        rep = await sock.recv()
+    mallory_sock = await backend_sock_factory(backend, mallory)
+    await mallory_sock.send({"cmd": "user_get", "user_id": mallory.user_id})
+    rep = await mallory_sock.recv()
     assert rep == {
         "status": "ok",
         "user_id": "mallory",

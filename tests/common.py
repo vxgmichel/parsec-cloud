@@ -2,18 +2,10 @@ import trio
 import pendulum
 from unittest.mock import Mock
 from inspect import iscoroutinefunction
-from async_generator import asynccontextmanager
 from copy import deepcopy
-from nacl.public import PrivateKey
-from nacl.signing import SigningKey
 
-from parsec.core import Core, CoreConfig
-from parsec.core.fs.data import new_access, new_workspace_manifest, remote_to_local_manifest
-from parsec.core.devices_manager import Device
 from parsec.core.local_db import LocalDB, LocalDBMissingEntry
-from parsec.handshake import ClientHandshake, AnonymousClientHandshake
 from parsec.networking import CookedSocket
-from parsec.backend import BackendApp, BackendConfig
 
 
 class InMemoryLocalDB(LocalDB):
@@ -86,109 +78,6 @@ class FreezeTestOnBrokenStreamCookedSocket(CookedSocket):
         except trio.BrokenStreamError as exc:
             # Wait here until this coroutine is cancelled
             await trio.sleep_forever()
-
-
-# TODO: Rename to serve_app ?
-@asynccontextmanager
-async def run_app(app):
-    async with trio.open_nursery() as nursery:
-
-        async def connection_factory(*args, **kwargs):
-            right, left = trio.testing.memory_stream_pair()
-            nursery.start_soon(app.handle_client, left)
-            return right
-
-        try:
-            yield connection_factory
-
-        finally:
-            nursery.cancel_scope.cancel()
-
-
-@asynccontextmanager
-async def backend_factory(**config):
-    config = BackendConfig(**config)
-    backend = BackendApp(config)
-    async with trio.open_nursery() as nursery:
-        await backend.init(nursery)
-        try:
-            yield backend
-
-        finally:
-            await backend.teardown()
-            nursery.cancel_scope.cancel()
-
-
-@asynccontextmanager
-async def connect_backend(backend, auth_as=None):
-    async with run_app(backend) as connection_factory:
-        sockstream = await connection_factory()
-        sock = FreezeTestOnBrokenStreamCookedSocket(sockstream)
-        if auth_as:
-            # Handshake
-            if auth_as == "anonymous":
-                ch = AnonymousClientHandshake()
-            else:
-                ch = ClientHandshake(auth_as.id, auth_as.device_signkey)
-            challenge_req = await sock.recv()
-            answer_req = ch.process_challenge_req(challenge_req)
-            await sock.send(answer_req)
-            result_req = await sock.recv()
-            ch.process_result_req(result_req)
-
-        yield sock
-
-
-@asynccontextmanager
-async def connect_core(core):
-    async with run_app(core) as connection_factory:
-        sockstream = await connection_factory()
-        sock = FreezeTestOnBrokenStreamCookedSocket(sockstream)
-
-        yield sock
-
-
-@asynccontextmanager
-async def core_factory(**config):
-    config = CoreConfig(**config)
-    core = Core(config)
-    async with trio.open_nursery() as nursery:
-        await core.init(nursery)
-        try:
-            yield core
-
-        finally:
-            await core.teardown()
-            nursery.cancel_scope.cancel()
-
-
-def bootstrap_device(user_id, device_name):
-    return bootstrap_devices(user_id, (device_name,))[0]
-
-
-def bootstrap_devices(user_id, devices_names):
-    user_privkey = PrivateKey.generate().encode()
-    first_device_id = "%s@%s" % (user_id, devices_names[0])
-
-    with freeze_time("2000-01-01"):
-        user_manifest = remote_to_local_manifest(new_workspace_manifest(first_device_id))
-    user_manifest["base_version"] = 1
-    user_manifest_access = new_access()
-
-    devices = []
-    for device_name in devices_names:
-        device_signkey = SigningKey.generate().encode()
-        device = Device(
-            "%s@%s" % (user_id, device_name),
-            user_privkey,
-            device_signkey,
-            user_manifest_access,
-            InMemoryLocalDB(),
-        )
-        device.local_db.set(user_manifest_access, user_manifest)
-        devices.append(device)
-
-    return devices
 
 
 def connect_signal_as_event(signal_ns, signal_name):

@@ -1,31 +1,24 @@
 import pytest
-import trio
-
-from tests.common import connect_core, run_app
 
 
 @pytest.mark.trio
-async def test_connection(core, core_sock_factory):
-    async with trio.open_nursery() as nursery:
-        sock = core_sock_factory(core, nursery=nursery)
+async def test_connection(core, core_sock_factory_cm):
+    async with core_sock_factory_cm(core) as sock:
         await sock.send({"cmd": "get_core_state"})
         rep = await sock.recv()
         assert rep == {"status": "ok", "login": None, "backend_online": False}
-        nursery.cancel_scope.cancel()
+
     # Deconnection, then reco
-    sock = core_sock_factory(core)
-    await sock.send({"cmd": "get_core_state"})
-    rep = await sock.recv()
-    assert rep == {"status": "ok", "login": None, "backend_online": False}
+    async with core_sock_factory_cm(core) as sock:
+        await sock.send({"cmd": "get_core_state"})
+        rep = await sock.recv()
+        assert rep == {"status": "ok", "login": None, "backend_online": False}
 
 
 @pytest.mark.trio
-async def test_multi_connections(core, core_sock_factory):
-    async with trio.open_nursery() as sock1_nursery:
-        sock1 = core_sock_factory(core, nursery=sock1_nursery)
-
-        async with trio.open_nursery() as sock2_nursery:
-            sock2 = core_sock_factory(core, nursery=sock2_nursery)
+async def test_multi_connections(core, core_sock_factory_cm):
+    async with core_sock_factory_cm(core) as sock1:
+        async with core_sock_factory_cm(core) as sock2:
 
             await sock1.send({"cmd": "get_core_state"})
             await sock2.send({"cmd": "get_core_state"})
@@ -36,25 +29,21 @@ async def test_multi_connections(core, core_sock_factory):
             assert rep1 == {"status": "ok", "login": None, "backend_online": False}
             assert rep2 == {"status": "ok", "login": None, "backend_online": False}
 
-            sock2_nursery.cancel_scope.cancel()
-
         # Sock 1 should not have been affected by sock 2 leaving
         await sock1.send({"cmd": "get_core_state"})
         rep = await sock1.recv()
         assert rep == {"status": "ok", "login": None, "backend_online": False}
 
-        sock1_nursery.cancel_scope.cancel()
-
 
 @pytest.mark.trio
 async def test_offline_login_and_logout(
-    server_factory, backend, backend_addr, device_factory, core_factory, core_sock_factory):
+    server_factory, backend, backend_addr, device_factory, core_factory, core_sock_factory_cm
+):
     # Backend is not available, hence we can use a user not registered in it
     device = device_factory()
     core = await core_factory(devices=[device])
 
-    async with trio.open_nursery() as nursery:
-        sock = core_sock_factory(core, nursery=nursery)
+    async with core_sock_factory_cm(core) as sock:
         await sock.send({"cmd": "info"})
         rep = await sock.recv()
         assert rep == {"status": "ok", "loaded": False, "id": None}
@@ -67,11 +56,8 @@ async def test_offline_login_and_logout(
         rep = await sock.recv()
         assert rep == {"status": "ok", "loaded": True, "id": device.id}
 
-        nursery.cancel_scope.cancel()
-
     # Changing socket should not trigger logout
-    async with trio.open_nursery() as nursery:
-        sock = core_sock_factory(core, nursery=nursery)
+    async with core_sock_factory_cm(core) as sock:
 
         await sock.send({"cmd": "info"})
         rep = await sock.recv()
@@ -84,22 +70,21 @@ async def test_offline_login_and_logout(
         rep = await sock.recv()
         assert rep == {"status": "ok", "loaded": False, "id": None}
 
-        nursery.cancel_scope.cancel()
-
     # Startup backend and check exception is triggered given logged user is unknown
     server_factory(backend.handle_client, backend_addr)
-    sock = core_sock_factory(core)
-    await sock.send({"cmd": "login", "id": device.id, "password": "<secret>"})
-    rep = await sock.recv()
-    assert rep == {"status": "ok"}
-    await sock.send({"cmd": "get_core_state"})
-    rep = await sock.recv()
-    assert rep == {"status": "ok", "login": device.id, "backend_online": False}
+    async with core_sock_factory_cm(core) as sock:
+        await sock.send({"cmd": "login", "id": device.id, "password": "<secret>"})
+        rep = await sock.recv()
+        assert rep == {"status": "ok"}
+        await sock.send({"cmd": "get_core_state"})
+        rep = await sock.recv()
+        assert rep == {"status": "ok", "login": device.id, "backend_online": False}
 
 
 @pytest.mark.trio
-async def test_login_and_logout(core, alice):
-    async with connect_core(core) as sock:
+async def test_login_and_logout(alice, core, core_sock_factory_cm):
+
+    async with core_sock_factory_cm(core) as sock:
         await sock.send({"cmd": "info"})
         rep = await sock.recv()
         assert rep == {"status": "ok", "loaded": False, "id": None}
@@ -113,7 +98,7 @@ async def test_login_and_logout(core, alice):
         assert rep == {"status": "ok", "loaded": True, "id": alice.id}
 
     # Changing socket should not trigger logout
-    async with connect_core(core) as sock:
+    async with core_sock_factory_cm(core) as sock:
         await sock.send({"cmd": "info"})
         rep = await sock.recv()
         assert rep == {"status": "ok", "loaded": True, "id": alice.id}
@@ -127,24 +112,24 @@ async def test_login_and_logout(core, alice):
 
 
 @pytest.mark.trio
-async def test_need_login_cmds(core):
-    async with connect_core(core) as sock:
-        for cmd in [
-            "logout",
-            "file_create",
-            "file_read",
-            "file_write",
-            "synchronize",
-            "flush",
-            "stat",
-            "folder_create",
-            "move",
-            "delete",
-            "file_truncate",
-        ]:
-            await sock.send({"cmd": cmd})
-            rep = await sock.recv()
-            assert rep == {"status": "login_required", "reason": "Login required"}
+async def test_need_login_cmds(core, core_sock_factory):
+    sock = core_sock_factory(core)
+    for cmd in [
+        "logout",
+        "file_create",
+        "file_read",
+        "file_write",
+        "synchronize",
+        "flush",
+        "stat",
+        "folder_create",
+        "move",
+        "delete",
+        "file_truncate",
+    ]:
+        await sock.send({"cmd": cmd})
+        rep = await sock.recv()
+        assert rep == {"status": "login_required", "reason": "Login required"}
 
 
 @pytest.mark.trio

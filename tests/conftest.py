@@ -8,6 +8,7 @@ from unittest.mock import patch
 import trio
 import trio_asyncio
 import hypothesis
+from async_generator import asynccontextmanager
 from nacl.public import PrivateKey
 from nacl.signing import SigningKey
 
@@ -161,12 +162,12 @@ def device_factory():
     devices = {}
     count = 0
 
-    def _device_factory(user_id=None, device_name='dev1'):
+    def _device_factory(user_id=None, device_name="dev1"):
         nonlocal count
         count += 1
 
         if not user_id:
-            user_id = f'user-{count}'
+            user_id = f"user-{count}"
 
         device_id = f"{user_id}@{device_name}"
         assert device_id not in devices
@@ -245,8 +246,8 @@ async def backend_store(request, asyncio_loop):
 
 @pytest.fixture
 def backend_factory(nursery, signal_ns_factory, backend_store, default_devices):
-    async def _backend_factory(devices=default_devices, signal_ns=None, nursery=nursery):
-        config = BackendConfig(blockstore_postgresql=True, dburl=backend_store)
+    async def _backend_factory(devices=default_devices, config={}, signal_ns=None, nursery=nursery):
+        config = BackendConfig(**{"blockstore_postgresql": True, "dburl": backend_store, **config})
         if not signal_ns:
             signal_ns = signal_ns_factory()
         backend = BackendApp(config, signal_ns=signal_ns)
@@ -303,8 +304,8 @@ def running_backend(server_factory, backend_addr, backend):
 
 
 @pytest.fixture
-def backend_connection_factory(server_factory, nursery):
-    async def _backend_connection_factory(backend, auth_as, nursery=nursery):
+def backend_sock_factory(server_factory, nursery):
+    async def _backend_sock_factory(backend, auth_as, nursery=nursery):
         server = server_factory(backend.handle_client, nursery=nursery)
         sockstream = server.connection_factory()
         sock = FreezeTestOnBrokenStreamCookedSocket(sockstream)
@@ -321,31 +322,29 @@ def backend_connection_factory(server_factory, nursery):
             ch.process_result_req(result_req)
         return sock
 
-    return _backend_connection_factory
+    return _backend_sock_factory
 
 
 @pytest.fixture
-async def anonymous_backend_sock(backend_connection_factory, backend):
-    return await backend_connection_factory(backend, "anonymous")
+async def anonymous_backend_sock(backend_sock_factory, backend):
+    return await backend_sock_factory(backend, "anonymous")
 
 
 @pytest.fixture
-async def alice_backend_sock(backend_connection_factory, backend, alice):
-    return await backend_connection_factory(backend, alice)
+async def alice_backend_sock(backend_sock_factory, backend, alice):
+    return await backend_sock_factory(backend, alice)
 
 
 @pytest.fixture
-async def bob_backend_sock(backend_connection_factory, backend, bob):
-    return await backend_connection_factory(backend, bob)
+async def bob_backend_sock(backend_sock_factory, backend, bob):
+    return await backend_sock_factory(backend, bob)
 
 
 @pytest.fixture
 def core_factory(tmpdir, nursery, signal_ns_factory, backend_addr, default_devices):
     count = 0
 
-    async def _core_factory(
-        devices=default_devices, config={}, signal_ns=None, nursery=nursery
-    ):
+    async def _core_factory(devices=default_devices, config={}, signal_ns=None, nursery=nursery):
         nonlocal count
         count += 1
 
@@ -355,7 +354,7 @@ def core_factory(tmpdir, nursery, signal_ns_factory, backend_addr, default_devic
                 "backend_addr": backend_addr,
                 "local_storage_dir": (core_dir / "local_storage").strpath,
                 "base_settings_path": (core_dir / "settings").strpath,
-                **config
+                **config,
             }
         )
         if not signal_ns:
@@ -390,6 +389,18 @@ def core_sock_factory(server_factory, nursery):
         return FreezeTestOnBrokenStreamCookedSocket(sockstream)
 
     return _core_sock_factory
+
+
+@pytest.fixture
+def core_sock_factory_cm(core_sock_factory):
+    @asynccontextmanager
+    async def _core_sock_factory_cm(core):
+        async with trio.open_nursery() as nursery:
+            sock = core_sock_factory(core, nursery=nursery)
+            yield sock
+            nursery.cancel_scope.cancel()
+
+    return _core_sock_factory_cm
 
 
 @pytest.fixture

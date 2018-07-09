@@ -70,9 +70,7 @@ def rule_selector():
     class CoreOfflineRestartAndRWFile(TrioDriverRuleBasedStateMachine):
         async def trio_runner(self, task_status):
             device = device_factory()
-            config = {
-                "block_size": BLOCK_SIZE,
-            }
+            config = {"block_size": BLOCK_SIZE}
 
             self.sys_cmd = lambda x: self.communicator.send(("sys", x))
             self.core_cmd = lambda x: self.communicator.send(("core", x))

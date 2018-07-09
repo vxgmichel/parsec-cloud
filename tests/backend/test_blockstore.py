@@ -2,8 +2,6 @@ import pytest
 
 from parsec.utils import to_jsonb64
 
-from tests.common import connect_backend
-
 
 def _get_existing_block(backend):
     # Backend must have been populated before that
@@ -11,17 +9,16 @@ def _get_existing_block(backend):
 
 
 @pytest.mark.trio
-async def test_blockstore_post_and_get(backend, alice, bob):
+async def test_blockstore_post_and_get(alice_backend_sock, bob_backend_sock):
     block_id = "123"
-    async with connect_backend(backend, auth_as=alice) as sock:
-        block = to_jsonb64(b"Hodi ho !")
-        await sock.send({"cmd": "blockstore_post", "id": block_id, "block": block})
-        rep = await sock.recv()
+
+    block = to_jsonb64(b"Hodi ho !")
+    await alice_backend_sock.send({"cmd": "blockstore_post", "id": block_id, "block": block})
+    rep = await alice_backend_sock.recv()
     assert rep["status"] == "ok"
 
-    async with connect_backend(backend, auth_as=bob) as sock:
-        await sock.send({"cmd": "blockstore_get", "id": block_id})
-        rep = await sock.recv()
+    await bob_backend_sock.send({"cmd": "blockstore_get", "id": block_id})
+    rep = await bob_backend_sock.recv()
     assert rep == {"status": "ok", "block": block}
 
 

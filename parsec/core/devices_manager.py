@@ -117,7 +117,7 @@ class DevicesManager:
 
     def list_available_devices(self):
         try:
-            candidate_pathes = self.devices_conf_path.iterdir()
+            candidate_pathes = list(self.devices_conf_path.iterdir())
         except FileNotFoundError:
             return []
 
@@ -126,9 +126,7 @@ class DevicesManager:
         for device_path in candidate_pathes:
             _, errors = self._load_device_conf(device_path.name)
             if errors:
-                logger.warning(
-                    f"Invalid `{device_path}` device config: {errors}"
-                )
+                logger.warning(f"Invalid `{device_path}` device config: {errors}")
             else:
                 devices.append(device_path.name)
         return devices
@@ -191,9 +189,7 @@ class DevicesManager:
 
         device_conf, errors = self._load_device_conf(device_id)
         if errors:
-            raise DeviceLoadingError(
-                f"Invalid {device_conf_path} device config: {errors}"
-            )
+            raise DeviceLoadingError(f"Invalid {device_conf_path} device config: {errors}")
 
         if password:
             if device_conf["encryption"] != "password":

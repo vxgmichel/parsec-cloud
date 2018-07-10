@@ -4,8 +4,7 @@ from string import ascii_lowercase
 from hypothesis import strategies as st, note
 from hypothesis.stateful import Bundle
 
-from tests.common import bootstrap_device, connect_core, core_factory
-from tests.hypothesis.common import OracleFS, rule, rule_once
+from tests.hypothesis.common import rule, rule_once
 
 
 # The point is not to find breaking filenames here, so keep it simple
@@ -14,7 +13,13 @@ st_entry_name = st.text(alphabet=ascii_lowercase, min_size=1, max_size=3)
 
 @pytest.mark.slow
 @pytest.mark.trio
-async def test_core_offline_restart_and_tree(TrioDriverRuleBasedStateMachine, backend_addr, tmpdir):
+async def test_core_offline_restart_and_tree(
+    TrioDriverRuleBasedStateMachine,
+    oracle_fs_factory,
+    core_factory,
+    core_sock_factory,
+    device_factory,
+):
     class RestartCore(Exception):
         pass
 
@@ -23,30 +28,32 @@ async def test_core_offline_restart_and_tree(TrioDriverRuleBasedStateMachine, ba
         Folders = Bundle("folder")
 
         async def trio_runner(self, task_status):
-            config = {"base_settings_path": tmpdir.strpath, "backend_addr": backend_addr}
-            device = bootstrap_device("alice", "dev1")
+            device = device_factory()
 
+            self.core = None
             self.sys_cmd = lambda x: self.communicator.send(("sys", x))
             self.core_cmd = lambda x: self.communicator.send(("core", x))
-            self.oracle_fs = OracleFS()
+            self.oracle_fs = oracle_fs_factory()
 
             async def run_core(on_ready):
-                async with core_factory(**config) as core:
-                    self.core = core
+                self.core = await core_factory(devices=[device])
+                try:
+                    await self.core.login(device)
+                    sock = core_sock_factory(self.core)
 
-                    await core.login(device)
-                    async with connect_core(core) as sock:
+                    await on_ready(sock)
 
-                        await on_ready(sock)
+                    while True:
+                        target, msg = await self.communicator.trio_recv()
+                        if target == "core":
+                            await sock.send(msg)
+                            rep = await sock.recv()
+                            await self.communicator.trio_respond(rep)
+                        elif msg == "restart!":
+                            raise RestartCore()
 
-                        while True:
-                            target, msg = await self.communicator.trio_recv()
-                            if target == "core":
-                                await sock.send(msg)
-                                rep = await sock.recv()
-                                await self.communicator.trio_respond(rep)
-                            elif msg == "restart!":
-                                raise RestartCore()
+                finally:
+                    await self.core.teardown()
 
             async def bootstrap_core(sock):
                 task_status.started()

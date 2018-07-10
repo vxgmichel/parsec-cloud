@@ -278,9 +278,16 @@ class LocalFolderFS:
 
             existing_entry_access = parent_manifest["children"].get(child_dst)
             if existing_entry_access:
+                src_entry_manifest = self._local_db.get(entry)
                 existing_entry_manifest = self._local_db.get(existing_entry_access)
-                if is_folder_manifest(existing_entry_manifest):
-                    raise IsADirectoryError(21, "Is a directory")
+                if is_folder_manifest(src_entry_manifest):
+                    if is_file_manifest(existing_entry_manifest):
+                        raise NotADirectoryError(20, "Not a directory")
+                    elif existing_entry_manifest["children"]:
+                        raise OSError(39, "Directory not empty")
+                else:
+                    if is_folder_manifest(existing_entry_manifest):
+                        raise IsADirectoryError(21, "Is a directory")
 
             parent_manifest["children"][child_dst] = entry
             mark_manifest_modified(parent_manifest)
@@ -307,9 +314,16 @@ class LocalFolderFS:
 
             existing_entry_access = parent_dst_manifest["children"].get(child_dst)
             if existing_entry_access:
+                src_entry_manifest = self._local_db.get(entry)
                 existing_entry_manifest = self._local_db.get(existing_entry_access)
-                if is_folder_manifest(existing_entry_manifest):
-                    raise IsADirectoryError(21, "Is a directory")
+                if is_folder_manifest(src_entry_manifest):
+                    if is_file_manifest(existing_entry_manifest):
+                        raise NotADirectoryError(20, "Not a directory")
+                    elif existing_entry_manifest["children"]:
+                        raise OSError(39, "Directory not empty")
+                else:
+                    if is_folder_manifest(existing_entry_manifest):
+                        raise IsADirectoryError(21, "Is a directory")
 
             parent_dst_manifest["children"][child_dst] = entry
 

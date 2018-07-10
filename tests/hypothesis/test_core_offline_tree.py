@@ -4,10 +4,7 @@ from string import ascii_lowercase
 from hypothesis import strategies as st, note
 from hypothesis.stateful import Bundle
 
-from tests.common import connect_core, core_factory
 from tests.hypothesis.common import OracleFS, rule_once, rule
-
-from tests.common import bootstrap_device
 
 
 # The point is not to find breaking filenames here, so keep it simple
@@ -16,29 +13,38 @@ st_entry_name = st.text(alphabet=ascii_lowercase, min_size=1, max_size=3)
 
 @pytest.mark.slow
 @pytest.mark.trio
-async def test_offline_core_tree(TrioDriverRuleBasedStateMachine, backend_addr, tmpdir):
+async def test_offline_core_tree(
+    TrioDriverRuleBasedStateMachine,
+    oracle_fs_factory,
+    core_factory,
+    core_sock_factory,
+    device_factory,
+):
     class CoreOfflineRWFile(TrioDriverRuleBasedStateMachine):
         Files = Bundle("file")
         Folders = Bundle("folder")
 
         async def trio_runner(self, task_status):
-            self.oracle_fs = OracleFS()
+            # self.oracle_fs = OracleFS()
+            self.oracle_fs = oracle_fs_factory()
 
-            config = {"base_settings_path": tmpdir.strpath, "backend_addr": backend_addr}
-            device = bootstrap_device("alice", "dev1")
-
-            async with core_factory(**config) as core:
+            device = device_factory()
+            core = await core_factory(devices=[device])
+            try:
                 await core.login(device)
-                async with connect_core(core) as sock:
+                sock = core_sock_factory(core)
 
-                    self.core_cmd = self.communicator.send
-                    task_status.started()
+                self.core_cmd = self.communicator.send
+                task_status.started()
 
-                    while True:
-                        msg = await self.communicator.trio_recv()
-                        await sock.send(msg)
-                        rep = await sock.recv()
-                        await self.communicator.trio_respond(rep)
+                while True:
+                    msg = await self.communicator.trio_recv()
+                    await sock.send(msg)
+                    rep = await sock.recv()
+                    await self.communicator.trio_respond(rep)
+
+            finally:
+                await core.teardown()
 
         @rule_once(target=Folders)
         def init_root(self):

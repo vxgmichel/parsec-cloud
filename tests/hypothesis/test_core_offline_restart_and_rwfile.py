@@ -13,7 +13,7 @@ PLAYGROUND_SIZE = BLOCK_SIZE * 10
 @pytest.mark.slow
 @pytest.mark.trio
 async def test_core_offline_restart_and_rwfile(
-    TrioDriverRuleBasedStateMachine, tmpdir, core_factory, core_sock_factory, device_factory
+    TrioDriverRuleBasedStateMachine, core_factory, core_sock_factory, device_factory
 ):
     class RestartCore(Exception):
         pass
@@ -30,7 +30,7 @@ class RestartCore(Exception):
     pass
 
 @pytest.mark.trio
-async def test_reproduce(tmpdir, core_factory, core_sock_factory, alice):
+async def test_reproduce(core_factory, core_sock_factory, alice):
     config = {{
         "block_size": BLOCK_SIZE,
     }}

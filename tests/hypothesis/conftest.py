@@ -115,3 +115,65 @@ async def TrioDriverRuleBasedStateMachine(nursery, portal, loghandler, hypothesi
             self._trio_runner_cancel_scope.cancel()
 
     return TrioDriverRuleBasedStateMachine
+
+
+@pytest.fixture
+def oracle_fs_factory(tmpdir):
+    from pathlib import Path
+
+    class FSOracle:
+        def __init__(self, root_path):
+            self.base_path = Path(root_path)
+            self.root_path = self.base_path / "root"
+            self.root_path.mkdir(parents=True)
+            self.base_path.chmod(0o500)  # Root oracle can no longer be removed this way
+
+        def create_file(self, path):
+            assert path.startswith("/")
+            path = self.root_path / path[1:]
+            try:
+                path.touch(exist_ok=False)
+            except OSError as exc:
+                return "invalid_path"
+            return "ok"
+
+        def create_folder(self, path):
+            assert path.startswith("/")
+            path = self.root_path / path[1:]
+            try:
+                path.mkdir()
+            except OSError as exc:
+                return "invalid_path"
+            return "ok"
+
+        def delete(self, path):
+            assert path.startswith("/")
+            path = self.root_path / path[1:]
+            try:
+                if path.is_file():
+                    path.unlink()
+                else:
+                    path.rmdir()
+            except OSError as exc:
+                return "invalid_path"
+            return "ok"
+
+        def move(self, src, dst):
+            assert src.startswith("/")
+            src = self.root_path / src[1:]
+            assert dst.startswith("/")
+            dst = self.root_path / dst[1:]
+            try:
+                src.rename(str(dst))
+            except OSError as exc:
+                return "invalid_path"
+            return "ok"
+
+    count = 0
+
+    def _oracle_fs_factory():
+        nonlocal count
+        count += 1
+        return FSOracle(Path(tmpdir / f"fs_oracle-{count}"))
+
+    return _oracle_fs_factory

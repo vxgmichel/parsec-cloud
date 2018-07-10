@@ -196,6 +196,11 @@ class BackendEventsManager(BaseAsyncComponent):
                 # TODO: think about this kind of signal format
                 self._event_pump_lost()
                 self.signal_ns.signal("panic").send(None, exc=exc)
+            except Exception as exc:
+                import pdb
+
+                pdb.set_trace()
+                print(exc)
 
     async def _event_pump(self, *, task_status=trio.TASK_STATUS_IGNORED):
         with trio.open_cancel_scope() as cancel_scope:

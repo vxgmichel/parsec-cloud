@@ -4,7 +4,7 @@ from hypothesis.stateful import rule
 
 from parsec.utils import to_jsonb64, from_jsonb64
 
-from tests.common import bootstrap_device, connect_core, core_factory, FileOracle
+from tests.hypothesis.common import FileOracle
 
 
 BLOCK_SIZE = 16
@@ -13,32 +13,33 @@ PLAYGROUND_SIZE = BLOCK_SIZE * 10
 
 @pytest.mark.slow
 @pytest.mark.trio
-async def test_core_offline_rwfile(TrioDriverRuleBasedStateMachine, backend_addr, tmpdir):
+async def test_core_offline_rwfile(
+    TrioDriverRuleBasedStateMachine, core_factory, core_sock_factory, device_factory
+):
     class CoreOfflineRWFile(TrioDriverRuleBasedStateMachine):
         async def trio_runner(self, task_status):
 
-            config = {
-                "base_settings_path": tmpdir.strpath,
-                "backend_addr": backend_addr,
-                "block_size": BLOCK_SIZE,
-            }
-            device = bootstrap_device("alice", "dev1")
-
-            async with core_factory(**config) as core:
+            device = device_factory()
+            config = {"block_size": BLOCK_SIZE}
+            core = await core_factory(devices=[device], config=config)
+            try:
                 await core.login(device)
-                async with connect_core(core) as sock:
+                sock = core_sock_factory(core)
 
-                    await core.fs.file_create("/foo.txt")
-                    self.file_oracle = FileOracle()
+                await core.fs.file_create("/foo.txt")
+                self.file_oracle = FileOracle()
 
-                    self.core_cmd = self.communicator.send
-                    task_status.started()
+                self.core_cmd = self.communicator.send
+                task_status.started()
 
-                    while True:
-                        msg = await self.communicator.trio_recv()
-                        await sock.send(msg)
-                        rep = await sock.recv()
-                        await self.communicator.trio_respond(rep)
+                while True:
+                    msg = await self.communicator.trio_recv()
+                    await sock.send(msg)
+                    rep = await sock.recv()
+                    await self.communicator.trio_respond(rep)
+
+            finally:
+                await core.teardown()
 
         @rule(
             size=st.integers(min_value=0, max_value=PLAYGROUND_SIZE),

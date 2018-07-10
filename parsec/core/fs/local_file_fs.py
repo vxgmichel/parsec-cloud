@@ -259,6 +259,7 @@ class LocalFileFS:
                 }
             )
 
+        # TODO: clean overwritten dirty blocks
         manifest["dirty_blocks"] += new_dirty_blocks
         manifest["size"] = hf.size
         mark_manifest_modified(manifest)

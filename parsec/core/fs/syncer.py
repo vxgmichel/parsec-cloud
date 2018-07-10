@@ -32,15 +32,6 @@ class Syncer:
         self._local_manifest_fs = local_manifest_fs
         self.signal_ns = signal_ns
 
-    def _build_beacon_messages(self, notify, msg):
-        raw_msg = pickle.dumps(msg)
-        signed_msg = sign(self.device.device_signkey, raw_msg)
-        notify_msgs = []
-        for beacon_id, beacon_key in notify:
-            beacon_ciphered_msg = sym_encrypt(beacon_key, signed_msg)
-            notify_msgs.append((beacon_id, beacon_ciphered_msg))
-        return notify_msgs
-
     def _get_group_check_local_entries(self):
         entries = []
 
@@ -107,19 +98,27 @@ class Syncer:
         assert ret["status"] == "ok"
         return ret
 
-    async def _backend_vlob_create(self, id, rts, wts, blob, notify):
-        payload = {"cmd": "vlob_create", "id": id, "wts": wts, "rts": rts, "blob": to_jsonb64(blob)}
+    async def _backend_vlob_create(self, id, rts, wts, blob, notify_beacons):
+        payload = {
+            "cmd": "vlob_create",
+            "id": id,
+            "wts": wts,
+            "rts": rts,
+            "blob": to_jsonb64(blob),
+            "notify_beacons": notify_beacons,
+        }
         ret = await self._backend_conn.send(payload)
         assert ret["status"] == "ok"
         return ret
 
-    async def _backend_vlob_update(self, id, wts, version, blob, notify):
+    async def _backend_vlob_update(self, id, wts, version, blob, notify_beacons):
         payload = {
             "cmd": "vlob_update",
             "id": id,
             "wts": wts,
             "version": version,
             "blob": to_jsonb64(blob),
+            "notify_beacons": notify_beacons,
         }
         ret = await self._backend_conn.send(payload)
         assert ret["status"] == "ok"
@@ -127,9 +126,6 @@ class Syncer:
 
     async def _sync_nolock(self, path, access, recursive, notify):
         print("sync nolock", access)
-        msg = {"id": access["id"]}
-        notify_msgs = self._build_beacon_messages(notify, msg)
-
         try:
             manifest = self._local_manifest_fs.get_manifest(access)
         except LocalDBMissingEntry:
@@ -167,17 +163,13 @@ class Syncer:
             if manifest["is_placeholder"]:
                 print("sync file placeholder sync", access["id"])
                 await self._backend_vlob_create(
-                    access["id"], access["rts"], access["wts"], ciphered, notify=notify_msgs
+                    access["id"], access["rts"], access["wts"], ciphered, notify
                 )
                 print("sync file placeholder sync done", access["id"])
             else:
                 print("sync file update sync", access["id"])
                 await self._backend_vlob_update(
-                    access["id"],
-                    access["wts"],
-                    remote_manifest["version"],
-                    ciphered,
-                    notify=notify_msgs,
+                    access["id"], access["wts"], remote_manifest["version"], ciphered, notify
                 )
                 print("sync file update sync done", access["id"])
 
@@ -220,17 +212,13 @@ class Syncer:
             if manifest["is_placeholder"]:
                 print("sync folder, placeholder sync", access["id"])
                 await self._backend_vlob_create(
-                    access["id"], access["rts"], access["wts"], ciphered, notify=notify_msgs
+                    access["id"], access["rts"], access["wts"], ciphered, notify
                 )
                 print("sync folder, placeholder sync done", access["id"])
             else:
                 print("sync folder, update sync", access["id"])
                 await self._backend_vlob_update(
-                    access["id"],
-                    access["wts"],
-                    remote_manifest["version"],
-                    ciphered,
-                    notify=notify_msgs,
+                    access["id"], access["wts"], remote_manifest["version"], ciphered, notify
                 )
                 print("sync folder, update sync done", access["id"])
 

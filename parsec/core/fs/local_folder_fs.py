@@ -44,6 +44,16 @@ class LocalFolderFS:
         # except LocalDBMissingEntry as exc:
         #     raise RuntimeError("Device %s is not initialized" % device) from exc
 
+    def init(self):
+        # Retrieve root beacon
+        try:
+            root_manifest = self._local_db.get(self.root_access)
+            self.signal_ns.signal("fs.workspace.loaded").send(
+                None, path="/", id=self.root_access, beacon_id=root_manifest["beacon_id"]
+            )
+        except LocalDBMissingEntry as exc:
+            pass
+
     def set_manifest(self, access, manifest):
         self._local_db.set(access, manifest)
 
@@ -60,7 +70,7 @@ class LocalFolderFS:
         def _beacons_collector(access, manifest):
             beacon_id = manifest.get("beacon_id")
             if beacon_id:
-                beacons.append((beacon_id, access["key"]))
+                beacons.append(beacon_id)
 
         self._retrieve_entry(path, collector=_beacons_collector)
         return beacons

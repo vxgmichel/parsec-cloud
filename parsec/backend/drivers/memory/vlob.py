@@ -37,7 +37,7 @@ class MemoryVlobComponent(BaseVlobComponent):
         self.vlobs[vlob.id] = vlob
 
         self._signal_vlob_updated.send(author, subject=id)
-        await self._notify_beacons(notify_beacons, id, author)
+        await self._notify_beacons(notify_beacons, id, 1, author)
 
         return VlobAtom(
             id=vlob.id,
@@ -83,8 +83,8 @@ class MemoryVlobComponent(BaseVlobComponent):
             raise VersionError("Wrong blob version.")
 
         self._signal_vlob_updated.send(author, subject=id)
-        await self._notify_beacons(notify_beacons, id, author)
+        await self._notify_beacons(notify_beacons, id, version, author)
 
-    async def _notify_beacons(self, ids, data, author):
+    async def _notify_beacons(self, ids, src_id, src_version, author):
         for id in ids:
-            await self._beacon_component.update(id, data, author=author)
+            await self._beacon_component.update(id, src_id, src_version, author=author)

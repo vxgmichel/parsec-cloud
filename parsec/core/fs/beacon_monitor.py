@@ -43,20 +43,17 @@ class BeaconMonitor(BaseAsyncComponent):
                 return child_access["key"]
 
     async def _task(self, *, task_status=trio.TASK_STATUS_IGNORED):
-        def _on_workspace_loaded(sender, path, beacon_id):
+        def _on_workspace_loaded(sender, path, id, beacon_id):
             self._workspaces[beacon_id] = path
             self.signal_ns.signal("backend.beacon.listen").send(None, beacon_id=beacon_id)
 
-        def _on_workspace_unloaded(sender, path, beacon_id):
+        def _on_workspace_unloaded(sender, path, id, beacon_id):
             del self._workspaces[beacon_id]
             self.signal_ns.signal("backend.beacon.unlisten").send(None, beacon_id=beacon_id)
 
         entry_updated_signal = self.signal_ns.signal("fs.entry.updated")
 
         def _on_beacon_updated(sender, id, msg, author, date):
-            import pdb
-
-            pdb.set_trace()
             if author == self._device.device_id:
                 return
 

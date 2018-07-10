@@ -201,6 +201,7 @@ class BackendEventsManager(BaseAsyncComponent):
 
             # Copy `self._subscribed_events` to avoid concurrent modifications
             subscribed_events = self._subscribed_events.copy()
+            print("===> SUBSCRIBED", subscribed_events)
 
             # TODO: allow to subscribe to multiple events in a single query...
             for args in subscribed_events:
@@ -228,7 +229,11 @@ class BackendEventsManager(BaseAsyncComponent):
                     self.signal_ns.signal("backend.pinged").send(None)
                 elif rep["event"] == "beacon.updated":
                     self.signal_ns.signal("backend.beacon.updated").send(
-                        None, beacon_id=rep["beacon_id"], index=rep["index"]
+                        None,
+                        beacon_id=rep["beacon_id"],
+                        index=rep["index"],
+                        src_id=rep["src_id"],
+                        src_version=rep["src_version"],
                     )
                 elif rep["event"] == "device.try_claim_submitted":
                     self.signal_ns.signal("backend.device.try_claim_submitted").send(

@@ -232,10 +232,16 @@ class BackendApp:
             expected_beacon_id = msg["beacon_id"]
             key = (event, expected_beacon_id)
 
-            def _build_event_msg(author, beacon_id, index):
+            def _build_event_msg(author, beacon_id, index, src_id, src_version):
                 if beacon_id != expected_beacon_id:
                     return None
-                return {"event": event, "beacon_id": beacon_id, "index": index}
+                return {
+                    "event": event,
+                    "beacon_id": beacon_id,
+                    "index": index,
+                    "src_id": src_id,
+                    "src_version": src_version,
+                }
 
         elif event == "message.received":
             key = event

@@ -28,6 +28,7 @@ class FS:
     async def init(self, nursery):
         await self._beacon_monitor.init(nursery)
         await self._sync_monitor.init(nursery)
+        self._local_folder_fs.init()
 
     async def teardown(self):
         await self._sync_monitor.teardown()

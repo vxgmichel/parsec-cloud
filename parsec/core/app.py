@@ -55,7 +55,6 @@ class Core(BaseAsyncComponent):
         #    └─ backend_connection
 
         self.components_dep_order = (
-            "backend_events_manager",
             "backend_connection",
             # "backend_storage",
             # "local_storage",
@@ -67,6 +66,9 @@ class Core(BaseAsyncComponent):
             # "synchronizer",
             # "remote_listener",
             # "sharing",
+            # Keep event manager last, so it will know what events the other
+            # modules need before connecting to the backend
+            "backend_events_manager",
         )
         for cname in self.components_dep_order:
             setattr(self, cname, None)

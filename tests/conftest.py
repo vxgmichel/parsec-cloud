@@ -33,6 +33,9 @@ def pytest_addoption(parser):
         "--only-postgresql", action="store_true", help="Only run tests making use of PostgreSQL"
     )
     parser.addoption("--runslow", action="store_true", help="Don't skip slow tests")
+    parser.addoption(
+        "--realcrypto", action="store_true", help="Don't mock crypto operation to save time"
+    )
 
 
 @pytest.fixture
@@ -48,6 +51,23 @@ def pytest_runtest_setup(item):
     os.environ.setdefault("TZ", "UTC")
     if "slow" in item.keywords and not item.config.getoption("--runslow"):
         pytest.skip("need --runslow option to run")
+
+
+@pytest.fixture(autouse=True, scope="session")
+def mock_crypto():
+    from nacl.secret import SecretBox
+
+    # Crypto is CPU hungry
+    if pytest.config.getoption("--realcrypto"):
+        yield
+    else:
+
+        def unsecure_but_fast_sbf(password, salt):
+            key = password[: SecretBox.KEY_SIZE] + b"\x00" * (SecretBox.KEY_SIZE - len(password))
+            return SecretBox(key)
+
+        with patch("parsec.core.devices_manager._secret_box_factory", new=unsecure_but_fast_sbf):
+            yield
 
 
 # Use current unix user's credential, don't forget to do

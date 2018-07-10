@@ -62,12 +62,14 @@ async def test_listen_beacon(signal_ns, running_backend, alice, backend_event_ma
     event_received = connect_signal_as_event(signal_ns, "backend.beacon.updated")
 
     running_backend.backend.signal_ns.signal("beacon.updated").send(
-        None, author="bob@test", beacon_id="123", index=1
+        None, author="bob@test", beacon_id="123", index=1, src_id="abc", src_version=42
     )
 
     with trio.fail_after(1.0):
         await event_received.wait()
-    event_received.cb.assert_called_with(None, beacon_id="123", index=1)
+    event_received.cb.assert_called_with(
+        None, beacon_id="123", index=1, src_id="abc", src_version=42
+    )
 
 
 @pytest.mark.trio
@@ -81,7 +83,7 @@ async def test_unlisten_beacon(signal_ns, running_backend, alice, backend_event_
 
     async with ensure_signal_not_sent(signal_ns, "backend.beacon.updated"):
         running_backend.backend.signal_ns.signal("beacon.updated").send(
-            None, author="bob@test", beacon_id="123", index=1
+            None, author="bob@test", beacon_id="123", index=1, src_id="abc", src_version=42
         )
 
 
@@ -132,9 +134,11 @@ async def test_backend_switch_offline(
     event_received = connect_signal_as_event(signal_ns, "backend.beacon.updated")
 
     running_backend.backend.signal_ns.signal("beacon.updated").send(
-        None, author="bob@test", beacon_id="123", index=1
+        None, author="bob@test", beacon_id="123", index=1, src_id="abc", src_version=42
     )
 
     with trio.fail_after(1.0):
         await event_received.wait()
-    event_received.cb.assert_called_with(None, beacon_id="123", index=1)
+    event_received.cb.assert_called_with(
+        None, beacon_id="123", index=1, src_id="abc", src_version=42
+    )

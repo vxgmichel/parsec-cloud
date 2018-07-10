@@ -8,20 +8,13 @@ from tests.open_tcp_stream_mock_wrapper import offline
 
 @asynccontextmanager
 async def wait_for_entries_synced(core, entries_pathes):
-    # # First make sure the backend event manager is ready to listen events
-    # await core.backend_events_manager.wait_backend_online()
-
     event = trio.Event()
     to_sync = set(entries_pathes)
     synced = set()
 
-    core_id = id(core)
-
     def _on_entry_synced(sender, id, path):
         if event.is_set():
             return
-
-        print(core_id, "ENTRY SYNCED", id, path)
 
         if path not in to_sync:
             raise AssertionError(f"{path} wasn't supposed to be synced, expected only {to_sync}")
@@ -34,18 +27,13 @@ async def wait_for_entries_synced(core, entries_pathes):
         if synced == to_sync:
             event.set()
 
-    print("******************** connect signal to ", id(core.signal_ns), core, entries_pathes)
     with core.signal_ns.signal("fs.entry.synced").temporarily_connected_to(_on_entry_synced):
-
         yield event
-
-        with trio.fail_after(1.0):
-            await event.wait()
-    print("+++++++++++++++++ done with", id(core.signal_ns), core, entries_pathes)
+        await event.wait()
 
 
 @pytest.mark.trio
-async def test_online_sync(running_backend, core_factory, alice, alice2):
+async def test_online_sync(autojump_clock, running_backend, core_factory, alice, alice2):
     # Given the cores are initialized while the backend is online, we are
     # guaranteed they are connected
     alice_core = await core_factory()
@@ -98,7 +86,9 @@ async def test_sync_then_clean_start(running_backend, core_factory, alice, alice
 
 
 @pytest.mark.trio
-async def test_sync_then_fast_forward_on_start(running_backend, core_factory, alice, alice2):
+async def test_sync_then_fast_forward_on_start(
+    autojump_clock, running_backend, core_factory, alice, alice2
+):
     # Given the cores are initialized while the backend is online, we are
     # guaranteed they are connected
     alice_core = await core_factory()
@@ -137,7 +127,7 @@ async def test_sync_then_fast_forward_on_start(running_backend, core_factory, al
 
 @pytest.mark.trio
 async def test_fast_forward_on_offline_during_sync(
-    mock_clock, server_factory, backend, core_factory, alice, alice2
+    autojump_clock, server_factory, backend, core_factory, alice, alice2
 ):
     server1 = server_factory(backend.handle_client)
     server2 = server_factory(backend.handle_client)
@@ -170,9 +160,6 @@ async def test_fast_forward_on_offline_during_sync(
 
             async with wait_for_entries_synced(alice2_core2, ("/", "/bar", "/foo.txt")):
                 await alice2_core2.fs.sync("/")
-
-        # Wait some time for the sync to kicks in
-        mock_clock.jump(5)
 
     for path in ("/", "/bar", "/foo.txt"):
         stat = await alice_core.fs.stat(path)

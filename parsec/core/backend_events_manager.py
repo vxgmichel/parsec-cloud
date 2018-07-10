@@ -33,6 +33,8 @@ class BackendEventBeaconUpdatedRepSchema(UnknownCheckedSchema):
     event = fields.CheckedConstant("beacon.updated", required=True)
     beacon_id = fields.String(required=True)
     index = fields.Integer(required=True)
+    src_id = fields.String(required=True)
+    src_version = fields.Integer(required=True)
 
 
 class BackendEventMessageReceivedRepSchema(UnknownCheckedSchema):

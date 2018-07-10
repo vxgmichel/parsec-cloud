@@ -53,22 +53,14 @@ class BeaconMonitor(BaseAsyncComponent):
 
         entry_updated_signal = self.signal_ns.signal("fs.entry.updated")
 
-        def _on_beacon_updated(sender, id, msg, author, date):
-            if author == self._device.device_id:
-                return
-
-            key = self._retreive_beacon_key(id)
+        def _on_beacon_updated(sender, beacon_id, index, src_id, src_version):
+            key = self._retreive_beacon_key(beacon_id)
             if not key:
                 # Don't know about this workspaces, no need to udate it then
                 return
-            print("beacon update", id, "by", author)
+            print("*** beacon update", beacon_id, "for", src_id)
 
-            # Verify is normally async, so we must move this into the task
-            msg_sign_author, raw_msg = verify(sym_decrypt(key, msg))
-            assert author == msg_sign_author
-            msg = pickle.loads(raw_msg)
-
-            entry_updated_signal.send(id=msg["id"])
+            entry_updated_signal.send(id=src_id)
 
         self.signal_ns.signal("fs.workspace.loaded").connect(_on_workspace_loaded, weak=True)
         self.signal_ns.signal("fs.workspace.unloaded").connect(_on_workspace_unloaded, weak=True)

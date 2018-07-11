@@ -14,6 +14,12 @@ from parsec.core.encryption_manager import (
 from parsec.core.backend_connection import BackendNotAvailable
 
 from tests.open_tcp_stream_mock_wrapper import offline
+from tests.conftest import realcrypto
+
+
+@pytest.fixture(scope="module", autouse=True)
+def force_realcrypto():
+    yield from realcrypto()
 
 
 def test_encrypt_for_self(alice):

@@ -7,7 +7,7 @@ from parsec.core.devices_manager import Device
 from parsec.handshake import HandshakeBadIdentity
 
 
-logger = logbook.Logger("parsec.core.backend_connections_multiplexer")
+logger = logbook.Logger("parsec.core.backend_cmds_sender")
 
 
 class BackendCmdsSender(BaseAsyncComponent):

@@ -1,5 +1,6 @@
 import inspect
 
+from parsec.core.base import BaseAsyncComponent
 from parsec.core.fs.beacon_monitor import BeaconMonitor
 from parsec.core.fs.sync_monitor import SyncMonitor
 from parsec.core.fs.local_folder_fs import (
@@ -12,7 +13,7 @@ from parsec.core.fs.syncer import Syncer
 from parsec.core.fs.remote_loader import RemoteLoader
 
 
-class FS:
+class FS(BaseAsyncComponent):
     def __init__(self, device, backend_conn, signal_ns):
         self.signal_ns = signal_ns
         self._device = device
@@ -25,12 +26,12 @@ class FS:
         self._beacon_monitor = BeaconMonitor(device, device.local_db, signal_ns)
         self._sync_monitor = SyncMonitor(self._local_folder_fs, self._syncer, signal_ns)
 
-    async def init(self, nursery):
+    async def _init(self, nursery):
         await self._beacon_monitor.init(nursery)
         await self._sync_monitor.init(nursery)
         self._local_folder_fs.init()
 
-    async def teardown(self):
+    async def _teardown(self):
         await self._sync_monitor.teardown()
         await self._beacon_monitor.teardown()
 

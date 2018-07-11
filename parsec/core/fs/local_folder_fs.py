@@ -54,6 +54,23 @@ class LocalFolderFS:
         except LocalDBMissingEntry as exc:
             pass
 
+    def dump(self):
+        def _recursive_dump(access):
+            dump_data = {'access': access}
+            try:
+                manifest = self._local_db.get(access)
+                dump_data.update(manifest)
+                if is_folder_manifest(manifest):
+                    for child_name, child_access in manifest['children'].items():
+                        dump_data['children'][child_name] = _recursive_dump(child_access)
+
+            except LocalDBMissingEntry as exc:
+                pass
+
+            return dump_data
+
+        return _recursive_dump(self.root_access)
+
     def set_manifest(self, access, manifest):
         self._local_db.set(access, manifest)
 

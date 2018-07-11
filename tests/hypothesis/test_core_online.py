@@ -14,11 +14,8 @@ async def test_online(
     device_factory,
 ):
     class CoreOnline(TrioDriverRuleBasedStateMachine):
-        count = 0
 
         async def trio_runner(self, task_status):
-            type(self).count += 1
-
             self.core_cmd = self.communicator.send
             self.device = device_factory()
             self.backend = await backend_factory(devices=[self.device])

@@ -11,6 +11,7 @@ import hypothesis
 from async_generator import asynccontextmanager
 from nacl.public import PrivateKey
 from nacl.signing import SigningKey
+import nacl
 
 from parsec.signals import Namespace as SignalNamespace
 from parsec.core import Core, CoreConfig
@@ -68,6 +69,15 @@ def mock_crypto():
 
         with patch("parsec.core.devices_manager._secret_box_factory", new=unsecure_but_fast_sbf):
             yield
+
+
+from parsec.core.devices_manager import _secret_box_factory as vanilla_sbf
+
+
+@pytest.fixture
+def realcrypto():
+    with patch("parsec.core.devices_manager._secret_box_factory", new=vanilla_sbf):
+        yield
 
 
 # Use current unix user's credential, don't forget to do
@@ -203,10 +213,12 @@ def device_factory():
             users[user_id] = (user_privkey, user_manifest_access, user_manifest_v1)
 
         device_signkey = SigningKey.generate().encode()
+        local_symkey = nacl.utils.random(nacl.secret.SecretBox.KEY_SIZE)
         device = Device(
             "%s@%s" % (user_id, device_name),
             user_privkey,
             device_signkey,
+            local_symkey,
             user_manifest_access,
             InMemoryLocalDB(),
         )

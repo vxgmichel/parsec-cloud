@@ -8,6 +8,7 @@ from parsec.networking import serve_client
 from parsec.core.base import BaseAsyncComponent, NotInitializedError
 from parsec.core.fs import FS
 from parsec.core.devices_manager import DevicesManager
+from parsec.core.encryption_manager import EncryptionManager
 from parsec.core.backend_cmds_sender import BackendCmdsSender
 from parsec.core.backend_events_manager import BackendEventsManager
 
@@ -39,11 +40,11 @@ class Core(BaseAsyncComponent):
         # ├─ fs
         # │  ├─ manifests_manager
         # │  │  ├─ encryption_manager
-        # │  │  │  ├─ backend_connection
+        # │  │  │  ├─ backend_cmds_sender
         # │  │  │  └─ local_storage
         # │  │  ├─ local_storage
         # │  │  └─ backend_storage
-        # │  │     └─ backend_connection
+        # │  │     └─ backend_cmds_sender
         # │  └─ blocks_manager
         # │     ├─ local_storage
         # │     └─ backend_storage
@@ -52,13 +53,13 @@ class Core(BaseAsyncComponent):
         # │  └─ fs
         # └─ sharing
         #    ├─ encryption_manager
-        #    └─ backend_connection
+        #    └─ backend_cmds_sender
 
         self.components_dep_order = (
-            "backend_connection",
+            "backend_cmds_sender",
             # "backend_storage",
             # "local_storage",
-            # "encryption_manager",
+            "encryption_manager",
             # "manifests_manager",
             # "blocks_manager",
             "fs",
@@ -98,24 +99,24 @@ class Core(BaseAsyncComponent):
             self.backend_events_manager = BackendEventsManager(
                 device, self.config.backend_addr, self.signal_ns
             )
-            self.backend_connection = BackendCmdsSender(device, self.config.backend_addr)
+            self.backend_cmds_sender = BackendCmdsSender(device, self.config.backend_addr)
             # self.local_storage = LocalStorage(device.local_storage_db_path)
-            # self.encryption_manager = EncryptionManager(
-            #     device, self.backend_connection, self.local_storage
-            # )
-            # self.backend_storage = BackendStorage(self.backend_connection)
+            self.encryption_manager = EncryptionManager(
+                device, self.backend_cmds_sender
+            )
+            # self.backend_storage = BackendStorage(self.backend_cmds_sender)
             # self.manifests_manager = ManifestsManager(
             #     self.local_storage, self.backend_storage, self.encryption_manager
             # )
             # self.blocks_manager = BlocksManager(self.local_storage, self.backend_storage)
-            self.fs = FS(device, self.backend_connection, self.signal_ns)
+            self.fs = FS(device, self.backend_cmds_sender, self.signal_ns)
             # self.fuse_manager = FuseManager(self.config.addr, self.signal_ns)
             # self.synchronizer = Synchronizer(self.config.auto_sync, self.fs)
             # self.remote_listener = RemoteListener(
-            #     device, self.backend_connection, self.backend_events_manager
+            #     device, self.backend_cmds_sender, self.backend_events_manager
             # )
             # self.sharing = Sharing(
-            #     device, self.fs, self.backend_connection, self.backend_events_manager
+            #     device, self.fs, self.backend_cmds_sender, self.backend_events_manager
             # )
 
             # Then initialize them, order must respect dependencies here !

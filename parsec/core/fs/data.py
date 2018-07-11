@@ -100,7 +100,7 @@ def new_local_file_manifest(author):
     }
 
 
-def is_placeholder(manifest):
+def is_placeholder_manifest(manifest):
     return manifest["is_placeholder"]
 
 

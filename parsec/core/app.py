@@ -37,35 +37,22 @@ class Core(BaseAsyncComponent):
         # Components dependencies tree:
         # app
         # ├─ backend_events_manager
+        # ├─ backend_cmds_sender
+        # ├─ encryption_manager
+        # │  └─ backend_cmds_sender
         # ├─ fs
-        # │  ├─ manifests_manager
-        # │  │  ├─ encryption_manager
-        # │  │  │  ├─ backend_cmds_sender
-        # │  │  │  └─ local_storage
-        # │  │  ├─ local_storage
-        # │  │  └─ backend_storage
-        # │  │     └─ backend_cmds_sender
-        # │  └─ blocks_manager
-        # │     ├─ local_storage
-        # │     └─ backend_storage
+        # │  ├─ encryption_manager
+        # │  └─ backend_cmds_sender
         # ├─ fuse_manager
-        # ├─ synchronizer
-        # │  └─ fs
         # └─ sharing
         #    ├─ encryption_manager
         #    └─ backend_cmds_sender
 
         self.components_dep_order = (
             "backend_cmds_sender",
-            # "backend_storage",
-            # "local_storage",
             "encryption_manager",
-            # "manifests_manager",
-            # "blocks_manager",
             "fs",
             # "fuse_manager",
-            # "synchronizer",
-            # "remote_listener",
             # "sharing",
             # Keep event manager last, so it will know what events the other
             # modules need before connecting to the backend
@@ -100,19 +87,9 @@ class Core(BaseAsyncComponent):
                 device, self.config.backend_addr, self.signal_ns
             )
             self.backend_cmds_sender = BackendCmdsSender(device, self.config.backend_addr)
-            # self.local_storage = LocalStorage(device.local_storage_db_path)
             self.encryption_manager = EncryptionManager(device, self.backend_cmds_sender)
-            # self.backend_storage = BackendStorage(self.backend_cmds_sender)
-            # self.manifests_manager = ManifestsManager(
-            #     self.local_storage, self.backend_storage, self.encryption_manager
-            # )
-            # self.blocks_manager = BlocksManager(self.local_storage, self.backend_storage)
             self.fs = FS(device, self.backend_cmds_sender, self.encryption_manager, self.signal_ns)
             # self.fuse_manager = FuseManager(self.config.addr, self.signal_ns)
-            # self.synchronizer = Synchronizer(self.config.auto_sync, self.fs)
-            # self.remote_listener = RemoteListener(
-            #     device, self.backend_cmds_sender, self.backend_events_manager
-            # )
             # self.sharing = Sharing(
             #     device, self.fs, self.backend_cmds_sender, self.backend_events_manager
             # )

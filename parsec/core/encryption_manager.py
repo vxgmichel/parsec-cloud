@@ -94,6 +94,30 @@ class RemoteDevice:
         return "%s@%s" % (self.user.user_id, self.name)
 
 
+def encrypt_with_symkey(key: bytes, data: bytes) -> bytes:
+    """
+    Raises:
+        MessageEncryptionError: if key is invalid.
+    """
+    try:
+        box = SecretBox(key)
+        return box.encrypt(data)
+    except CryptoError as exc:
+        raise MessageEncryptionError() from exc
+
+
+def decrypt_with_symkey(key: bytes, ciphered: bytes) -> bytes:
+    """
+    Raises:
+        MessageEncryptionError: if key is invalid.
+    """
+    try:
+        box = SecretBox(key)
+        return box.decrypt(ciphered)
+    except CryptoError as exc:
+        raise MessageEncryptionError() from exc
+
+
 def encrypt_for_local(key: bytes, msg: dict) -> bytes:
     """
     Raises:
@@ -105,11 +129,7 @@ def encrypt_for_local(key: bytes, msg: dict) -> bytes:
     except TypeError as exc:
         raise MessageFormatError("Cannot encode message as JSON") from exc
 
-    try:
-        box = SecretBox(key)
-        return box.encrypt(encoded_msg)
-    except CryptoError as exc:
-        raise MessageEncryptionError() from exc
+    return encrypt_with_symkey(key, encoded_msg)
 
 
 def decrypt_for_local(key: bytes, ciphered_msg: bytes) -> dict:
@@ -118,11 +138,7 @@ def decrypt_for_local(key: bytes, ciphered_msg: bytes) -> dict:
         MessageFormatError: if deciphered message is not JSON-decodable.
         MessageEncryptionError: if key is invalid.
     """
-    try:
-        box = SecretBox(key)
-        encoded_msg = box.decrypt(ciphered_msg)
-    except CryptoError as exc:
-        raise MessageEncryptionError() from exc
+    encoded_msg = decrypt_with_symkey(key, ciphered_msg)
 
     try:
         return json.loads(encoded_msg.decode("utf-8"))

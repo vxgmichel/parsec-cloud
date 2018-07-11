@@ -23,7 +23,12 @@ class FS(BaseAsyncComponent):
         self._local_file_fs = LocalFileFS(device, self._local_folder_fs, signal_ns)
         self._remote_loader = RemoteLoader(backend_cmds_sender, encryption_manager, device.local_db)
         self._syncer = Syncer(
-            device, backend_cmds_sender, encryption_manager, self._local_folder_fs, self._local_file_fs, signal_ns
+            device,
+            backend_cmds_sender,
+            encryption_manager,
+            self._local_folder_fs,
+            self._local_file_fs,
+            signal_ns,
         )
 
         self._beacon_monitor = BeaconMonitor(device, self._local_folder_fs, signal_ns)

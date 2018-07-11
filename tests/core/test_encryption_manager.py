@@ -23,7 +23,7 @@ def force_realcrypto():
 
 
 def test_encrypt_for_self(alice):
-    msg = b'Hello world !'
+    msg = b"Hello world !"
     ciphered_msg = encrypt_for_self(alice, msg)
     assert isinstance(ciphered_msg, bytes)
 
@@ -37,7 +37,7 @@ def test_encrypt_for_self(alice):
 
 
 def test_encrypt_for_other(alice, bob):
-    msg = b'Hello world !'
+    msg = b"Hello world !"
     ciphered_msg = encrypt_for(alice, bob, msg)
     assert isinstance(ciphered_msg, bytes)
 
@@ -51,7 +51,7 @@ def test_encrypt_for_other(alice, bob):
 
 
 def test_encrypt_with_secret_key(alice):
-    msg = b'Hello world !'
+    msg = b"Hello world !"
     key = generate_sym_key()
     ciphered_msg = encrypt_with_secret_key(alice, key, msg)
     assert isinstance(ciphered_msg, bytes)

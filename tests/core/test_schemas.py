@@ -63,7 +63,6 @@ class TestBlockAccessSchema:
         assert errors
 
 
-
 class TestFileManifestSchema:
     ORIGINAL = {
         "format": 1,
@@ -424,8 +423,8 @@ class TestLocalFolderManifestSchema:
                 },
                 "bar.txt": {
                     "id": "51c865a60b194d9bb087df000056c299",
-                "rts": "d756228815074b1f9ea6e5d383bcb995",
-                "wts": "ba4fddebe99d4f3e9f17ccb84a524e19",
+                    "rts": "d756228815074b1f9ea6e5d383bcb995",
+                    "wts": "ba4fddebe99d4f3e9f17ccb84a524e19",
                     "key": b"<bar.txt key>",
                 },
             },

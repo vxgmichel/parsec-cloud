@@ -132,8 +132,8 @@ def test_flush_file(local_file_fs, foo_txt):
 
 def test_block_not_loaded_entry(local_folder_fs, local_file_fs, foo_txt):
     foo_manifest = local_folder_fs.get_manifest(foo_txt.access)
-    block1 = b'a' * 10
-    block2 = b'b' * 5
+    block1 = b"a" * 10
+    block2 = b"b" * 5
     block1_access = new_block_access(block1, 0)
     block2_access = new_block_access(block2, 10)
     foo_manifest["blocks"].append(block1_access)
@@ -154,7 +154,9 @@ def test_block_not_loaded_entry(local_folder_fs, local_file_fs, foo_txt):
 
 
 @pytest.mark.slow
-def test_file_operations(tmpdir, hypothesis_settings, signal_ns, device_factory, local_file_fs_factory):
+def test_file_operations(
+    tmpdir, hypothesis_settings, signal_ns, device_factory, local_file_fs_factory
+):
     tentative = 0
 
     class FileOperationsStateMachine(RuleBasedStateMachine):

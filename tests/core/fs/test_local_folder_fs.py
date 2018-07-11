@@ -129,7 +129,9 @@ class PathElement:
 
 
 @pytest.mark.slow
-def test_folder_operations(tmpdir, hypothesis_settings, signal_ns, device_factory, local_folder_fs_factory):
+def test_folder_operations(
+    tmpdir, hypothesis_settings, signal_ns, device_factory, local_folder_fs_factory
+):
     tentative = 0
 
     # The point is not to find breaking filenames here, so keep it simple

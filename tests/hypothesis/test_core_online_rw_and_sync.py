@@ -136,7 +136,7 @@ def rule_selector():
 
             async def run_core(on_ready):
                 core = await core_factory(
-                    devices=[device], config={"backend_addr": server.addr, 'block_size': BLOCK_SIZE}
+                    devices=[device], config={"backend_addr": server.addr, "block_size": BLOCK_SIZE}
                 )
                 await core.login(device)
                 sock = core_sock_factory(core)

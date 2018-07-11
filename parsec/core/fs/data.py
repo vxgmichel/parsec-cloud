@@ -11,8 +11,8 @@ def _generate_secret_key():
 
 def new_user_manifest(author):
     manifest = new_workspace_manifest(author)
-    manifest['last_processed_message'] = 0
-    manifest['type'] = 'user_manifest'
+    manifest["last_processed_message"] = 0
+    manifest["type"] = "user_manifest"
     return manifest
 
 
@@ -63,7 +63,13 @@ def new_access():
 
 
 def new_block_access(block, offset):
-    return {"id": uuid4().hex, "key": _generate_secret_key(), 'offset': offset, 'size': len(block), "digest": sha256(block).hexdigest()}
+    return {
+        "id": uuid4().hex,
+        "key": _generate_secret_key(),
+        "offset": offset,
+        "size": len(block),
+        "digest": sha256(block).hexdigest(),
+    }
 
 
 def new_local_workspace_manifest(author):
@@ -121,8 +127,8 @@ def is_file_manifest(manifest):
 
 
 def is_folder_manifest(manifest):
-    for t in ('folder_manifest', 'workspace_manifest', 'user_manifest'):
-        if manifest['type'].endswith(t):
+    for t in ("folder_manifest", "workspace_manifest", "user_manifest"):
+        if manifest["type"].endswith(t):
             return True
     return False
 

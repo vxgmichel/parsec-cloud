@@ -16,7 +16,13 @@ from parsec.utils import to_jsonb64
 
 class Syncer:
     def __init__(
-        self, device, backend_cmds_sender, encryption_manager, local_folder_fs, local_file_fs, signal_ns
+        self,
+        device,
+        backend_cmds_sender,
+        encryption_manager,
+        local_folder_fs,
+        local_file_fs,
+        signal_ns,
     ):
         self._lock = trio.Lock()
         self.device = device
@@ -144,7 +150,7 @@ class Syncer:
             print("sync file uploading blocks", access["id"])
             for db_access in manifest["dirty_blocks"]:
                 db = self.local_file_fs.get_block(db_access)
-                db_access['digest'] = sha256(db).hexdigest()
+                db_access["digest"] = sha256(db).hexdigest()
                 await self._backend_block_post(db_access, db)
             manifest["blocks"] += manifest["dirty_blocks"]
             print("sync file blocks uploaded", access["id"])
@@ -159,7 +165,9 @@ class Syncer:
                 "author": self.device.id,
             }
 
-            ciphered = self.encryption_manager.encrypt_with_secret_key(access['key'], dumps_manifest(remote_manifest))
+            ciphered = self.encryption_manager.encrypt_with_secret_key(
+                access["key"], dumps_manifest(remote_manifest)
+            )
             if manifest["is_placeholder"]:
                 print("sync file placeholder sync", access["id"])
                 await self._backend_vlob_create(
@@ -206,7 +214,9 @@ class Syncer:
             remote_manifest = local_to_remote_manifest(manifest)
             remote_manifest["version"] += 1
 
-            ciphered = self.encryption_manager.encrypt_with_secret_key(access['key'], dumps_manifest(remote_manifest))
+            ciphered = self.encryption_manager.encrypt_with_secret_key(
+                access["key"], dumps_manifest(remote_manifest)
+            )
             if manifest["is_placeholder"]:
                 print("sync folder, placeholder sync", access["id"])
                 await self._backend_vlob_create(

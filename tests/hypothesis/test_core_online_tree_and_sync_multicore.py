@@ -74,19 +74,12 @@ async def test_reproduce(running_backend, core, alice_core_sock, core2, alice2_c
             backend = await backend_factory(devices=[device1, device2])
             server = server_factory(backend.handle_client)
 
-            core1 = await core_factory(
-                devices=[device1], config={"backend_addr": server.addr}
-            )
-            core2 = await core_factory(
-                devices=[device2], config={"backend_addr": server.addr}
-            )
+            core1 = await core_factory(devices=[device1], config={"backend_addr": server.addr})
+            core2 = await core_factory(devices=[device2], config={"backend_addr": server.addr})
             try:
                 await core1.login(device1)
                 await core2.login(device2)
-                sockets = {
-                    "core_1": core_sock_factory(core1),
-                    "core_2": core_sock_factory(core2),
-                }
+                sockets = {"core_1": core_sock_factory(core1), "core_2": core_sock_factory(core2)}
 
                 task_status.started()
 

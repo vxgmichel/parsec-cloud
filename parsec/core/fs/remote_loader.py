@@ -30,7 +30,9 @@ class RemoteLoader:
         # TODO: validate answer
         assert rep["status"] == "ok"
         ciphered = from_jsonb64(rep["blob"])
-        raw_remote_manifest = await self.encryption_manager.decrypt_with_secret_key(access["key"], ciphered)
+        raw_remote_manifest = await self.encryption_manager.decrypt_with_secret_key(
+            access["key"], ciphered
+        )
         remote_manifest = loads_manifest(raw_remote_manifest)
         local_manifest = remote_to_local_manifest(remote_manifest)
         raw_local_manifest = dumps_manifest(local_manifest)

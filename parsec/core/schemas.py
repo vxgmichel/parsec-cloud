@@ -110,7 +110,6 @@ class LocalUserManifestSchema(LocalFolderManifestSchema):
     beacon_id = fields.String(required=True)
 
 
-
 class TypedManifestSchema(OneOfSchema):
     type_field = "type"
     type_field_remove = False
@@ -133,10 +132,10 @@ typed_manifest_schema = TypedManifestSchema()
 def dumps_manifest(manifest: dict):
     raw, errors = typed_manifest_schema.dumps(manifest)
     assert not errors
-    return raw.encode('utf-8')
+    return raw.encode("utf-8")
 
 
 def loads_manifest(raw: bytes):
-    manifest, errors = typed_manifest_schema.loads(raw.decode('utf-8'))
+    manifest, errors = typed_manifest_schema.loads(raw.decode("utf-8"))
     assert not errors
     return manifest

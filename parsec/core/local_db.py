@@ -16,10 +16,10 @@ class LocalDB:
         self._path.mkdir(parents=True, exist_ok=True)
 
         # TODO: fix recursive import
-        from parsec.core.encryption_manager import encrypt_for_local, decrypt_for_local
+        from parsec.core.encryption_manager import encrypt_with_symkey, decrypt_with_symkey
 
-        self._encrypt_for_local = encrypt_for_local
-        self._decrypt_for_local = decrypt_for_local
+        self._encrypt_with_symkey = encrypt_with_symkey
+        self._decrypt_with_symkey = decrypt_with_symkey
 
     @property
     def path(self):
@@ -31,10 +31,11 @@ class LocalDB:
             raw = file.read_bytes()
         except FileNotFoundError:
             raise LocalDBMissingEntry(access)
-        return self._decrypt_for_local(access["key"], raw)
+        return self._decrypt_with_symkey(access["key"], raw)
 
-    def set(self, access, manifest):
-        ciphered = self._encrypt_for_local(access["key"], manifest)
+    def set(self, access, raw: bytes):
+        assert isinstance(raw, (bytes, bytearray))
+        ciphered = self._encrypt_with_symkey(access["key"], raw)
         file = self._path / access["id"]
         file.write_bytes(ciphered)
 

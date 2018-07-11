@@ -15,7 +15,8 @@ import nacl
 
 from parsec.signals import Namespace as SignalNamespace
 from parsec.core import Core, CoreConfig
-from parsec.core.fs.data import new_access, new_workspace_manifest, remote_to_local_manifest
+from parsec.core.schemas import dumps_manifest
+from parsec.core.fs.data import new_access, new_user_manifest, remote_to_local_manifest
 from parsec.core.devices_manager import Device
 from parsec.backend import BackendApp, BackendConfig
 from parsec.backend.drivers import postgresql as pg_driver
@@ -207,7 +208,7 @@ def device_factory():
         except KeyError:
             user_privkey = PrivateKey.generate().encode()
             with freeze_time("2000-01-01"):
-                user_manifest_v1 = remote_to_local_manifest(new_workspace_manifest(device_id))
+                user_manifest_v1 = remote_to_local_manifest(new_user_manifest(device_id))
             user_manifest_v1["base_version"] = 1
             user_manifest_access = new_access()
             users[user_id] = (user_privkey, user_manifest_access, user_manifest_v1)
@@ -215,14 +216,14 @@ def device_factory():
         device_signkey = SigningKey.generate().encode()
         local_symkey = nacl.utils.random(nacl.secret.SecretBox.KEY_SIZE)
         device = Device(
-            "%s@%s" % (user_id, device_name),
+            f"{user_id}@{device_name}",
             user_privkey,
             device_signkey,
             local_symkey,
             user_manifest_access,
             InMemoryLocalDB(),
         )
-        device.local_db.set(user_manifest_access, user_manifest_v1)
+        device.local_db.set(user_manifest_access, dumps_manifest(user_manifest_v1))
 
         devices[device_id] = device
         return device

@@ -6,7 +6,7 @@ from nacl.public import SealedBox, PublicKey
 from nacl.signing import VerifyKey
 
 from parsec.schema import UnknownCheckedSchema, OneOfSchema, fields
-from parsec.core.schemas import LocalVlobAccessSchema
+from parsec.core.schemas import ManifestAccessSchema
 from parsec.core.base import BaseAsyncComponent
 from parsec.core.fs import FSInvalidPath
 from parsec.core.fs.utils import is_placeholder_access, normalize_path, is_file_manifest
@@ -72,7 +72,7 @@ backend_user_get_rep_schema = BackendUserGetRepSchema()
 class SharingMessageContentSchema(UnknownCheckedSchema):
     type = fields.CheckedConstant("share", required=True)
     author = fields.String(required=True)
-    access = fields.Nested(LocalVlobAccessSchema, required=True)
+    access = fields.Nested(ManifestAccessSchema, required=True)
     name = fields.String(required=True)
 
 

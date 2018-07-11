@@ -1,17 +1,6 @@
 import os
 import trio
-import pickle
-
-try:
-    from parsec.utils import sym_encrypt, sign
-except ImportError:
-
-    def sym_encrypt(key, content):
-        return content
-
-    def sign(key, content):
-        return content
-
+from hashlib import sha256
 
 from parsec.core.fs.data import (
     is_file_manifest,
@@ -20,19 +9,21 @@ from parsec.core.fs.data import (
     local_to_remote_manifest,
 )
 from parsec.core.fs.local_folder_fs import FSManifestLocalMiss
+from parsec.core.schemas import dumps_manifest
 from parsec.core.local_db import LocalDBMissingEntry
 from parsec.utils import to_jsonb64
 
 
 class Syncer:
     def __init__(
-        self, device, backend_cmds_sender, encryption_manager, local_manifest_fs, signal_ns
+        self, device, backend_cmds_sender, encryption_manager, local_folder_fs, local_file_fs, signal_ns
     ):
         self._lock = trio.Lock()
         self.device = device
+        self.local_folder_fs = local_folder_fs
+        self.local_file_fs = local_file_fs
         self.backend_cmds_sender = backend_cmds_sender
         self.encryption_manager = encryption_manager
-        self.local_manifest_fs = local_manifest_fs
         self.signal_ns = signal_ns
 
     def _get_group_check_local_entries(self):
@@ -40,11 +31,12 @@ class Syncer:
 
         def _recursive_get_local_entries_ids(access):
             try:
-                manifest = self.local_manifest_fs.get_manifest(access)
+
+                manifest = self.local_folder_fs.get_manifest(access)
             except LocalDBMissingEntry:
                 # TODO: make the assert true...
                 # # Root should always be loaded
-                # assert access is not self.local_manifest_fs.root_access
+                # assert access is not self.device.user_manifest_access
                 return
 
             if is_folder_manifest(manifest):
@@ -56,7 +48,7 @@ class Syncer:
                 {"id": access["id"], "rts": access["rts"], "version": manifest["base_version"]}
             )
 
-        _recursive_get_local_entries_ids(self.local_manifest_fs.root_access)
+        _recursive_get_local_entries_ids(self.device.user_manifest_access)
         return entries
 
     async def full_sync(self):
@@ -75,8 +67,8 @@ class Syncer:
 
     async def sync_by_id(self, entry_id):
         try:
-            path, access, _ = self.local_manifest_fs.get_entry_path(entry_id)
-            notify = self.local_manifest_fs.get_beacons(path)
+            path, access, _ = self.local_folder_fs.get_entry_path(entry_id)
+            notify = self.local_folder_fs.get_beacons(path)
         except FSManifestLocalMiss:
             # Entry not locally present, nothing to do
             return
@@ -136,7 +128,7 @@ class Syncer:
     async def _sync_nolock(self, path, access, recursive, notify):
         print("sync nolock", access)
         try:
-            manifest = self.local_manifest_fs.get_manifest(access)
+            manifest = self.local_folder_fs.get_manifest(access)
         except LocalDBMissingEntry:
             # Nothing to do if entry is no present locally
             return
@@ -144,14 +136,15 @@ class Syncer:
         # Do complex stuff here...
         if is_file_manifest(manifest):
             if not manifest["need_sync"]:
-                self.local_manifest_fs.mark_outdated_manifest(access)
+                self.local_folder_fs.mark_outdated_manifest(access)
                 self.signal_ns.signal("fs.entry.synced").send(None, path=path, id=access["id"])
                 print("sync file oudating entry", access["id"])
                 return
 
             print("sync file uploading blocks", access["id"])
             for db_access in manifest["dirty_blocks"]:
-                db = self.local_manifest_fs.get_manifest(db_access)
+                db = self.local_file_fs.get_block(db_access)
+                db_access['digest'] = sha256(db).hexdigest()
                 await self._backend_block_post(db_access, db)
             manifest["blocks"] += manifest["dirty_blocks"]
             print("sync file blocks uploaded", access["id"])
@@ -166,9 +159,7 @@ class Syncer:
                 "author": self.device.id,
             }
 
-            raw = pickle.dumps(remote_manifest)
-            signed = sign(self.device.device_signkey, raw)
-            ciphered = sym_encrypt(access["key"], signed)
+            ciphered = self.encryption_manager.encrypt_with_secret_key(access['key'], dumps_manifest(remote_manifest))
             if manifest["is_placeholder"]:
                 print("sync file placeholder sync", access["id"])
                 await self._backend_vlob_create(
@@ -184,7 +175,7 @@ class Syncer:
 
             # Fuck the merge...
             updated_manifest = remote_to_local_manifest(remote_manifest)
-            self.local_manifest_fs.set_manifest(access, updated_manifest)
+            self.local_folder_fs.set_manifest(access, updated_manifest)
 
         else:
             if recursive:
@@ -207,7 +198,7 @@ class Syncer:
 
             if not manifest["need_sync"]:
                 # TODO: User manifest should always be loaded
-                self.local_manifest_fs.mark_outdated_manifest(access)
+                self.local_folder_fs.mark_outdated_manifest(access)
                 self.signal_ns.signal("fs.entry.synced").send(None, path=path, id=access["id"])
                 print("sync folder, oudating marked", access["id"])
                 return
@@ -215,9 +206,7 @@ class Syncer:
             remote_manifest = local_to_remote_manifest(manifest)
             remote_manifest["version"] += 1
 
-            raw = pickle.dumps(remote_manifest)
-            signed = sign(self.device.device_signkey, raw)
-            ciphered = sym_encrypt(access["key"], signed)
+            ciphered = self.encryption_manager.encrypt_with_secret_key(access['key'], dumps_manifest(remote_manifest))
             if manifest["is_placeholder"]:
                 print("sync folder, placeholder sync", access["id"])
                 await self._backend_vlob_create(
@@ -233,7 +222,7 @@ class Syncer:
 
             # Fuck the merge...
             updated_manifest = remote_to_local_manifest(remote_manifest)
-            self.local_manifest_fs.set_manifest(access, updated_manifest)
+            self.local_folder_fs.set_manifest(access, updated_manifest)
 
         print(" ********************** send signal to ", id(self.signal_ns))
         self.signal_ns.signal("fs.entry.synced").send(None, path=path, id=access["id"])

@@ -19,10 +19,10 @@ class BlockAccessSchema(UnknownCheckedSchema):
     offset = fields.Integer(required=True, validate=validate.Range(min=0))
     size = fields.Integer(required=True, validate=validate.Range(min=0))
     # TODO: provide digest as hexa string
-    digest = fields.Base64Bytes(required=True, validate=validate.Length(min=1, max=4096))
+    digest = fields.String(required=True, validate=validate.Length(min=1, max=64))
 
 
-class SyncedAccessSchema(UnknownCheckedSchema):
+class ManifestAccessSchema(UnknownCheckedSchema):
     id = fields.String(required=True, validate=validate.Length(min=1, max=32))
     key = fields.Base64Bytes(required=True, validate=validate.Length(min=1, max=4096))
     rts = fields.String(required=True, validate=validate.Length(min=1, max=32))
@@ -32,8 +32,7 @@ class SyncedAccessSchema(UnknownCheckedSchema):
 class FileManifestSchema(UnknownCheckedSchema):
     format = fields.CheckedConstant(1, required=True)
     type = fields.CheckedConstant("file_manifest", required=True)
-    user_id = fields.String(required=True)
-    device_name = fields.String(required=True)
+    author = fields.String(required=True)
     version = fields.Integer(required=True, validate=validate.Range(min=1))
     created = fields.DateTime(required=True)
     updated = fields.DateTime(required=True)
@@ -45,14 +44,13 @@ class FileManifestSchema(UnknownCheckedSchema):
 class FolderManifestSchema(UnknownCheckedSchema):
     format = fields.CheckedConstant(1, required=True)
     type = fields.CheckedConstant("folder_manifest", required=True)
-    user_id = fields.String(required=True)
-    device_name = fields.String(required=True)
+    author = fields.String(required=True)
     version = fields.Integer(required=True, validate=validate.Range(min=1))
     created = fields.DateTime(required=True)
     updated = fields.DateTime(required=True)
     children = fields.Map(
         fields.String(validate=validate.Length(min=1, max=256)),
-        fields.Nested(SyncedAccessSchema),
+        fields.Nested(ManifestAccessSchema),
         required=True,
     )
     sharing = fields.Nested(SharingSchema)
@@ -61,6 +59,7 @@ class FolderManifestSchema(UnknownCheckedSchema):
 class UserManifestSchema(FolderManifestSchema):
     type = fields.CheckedConstant("user_manifest", required=True)
     last_processed_message = fields.Integer(required=True, validate=validate.Range(min=0))
+    beacon_id = fields.String(required=True)
 
 
 # Local data
@@ -73,32 +72,13 @@ class DirtyBlockAccessSchema(UnknownCheckedSchema):
     size = fields.Integer(required=True, validate=validate.Range(min=0))
 
 
-class LocalVlobAccessSchema(SyncedAccessSchema):
-    type = fields.CheckedConstant("vlob")
-
-
-class LocalPlaceHolderAccessSchema(UnknownCheckedSchema):
-    type = fields.CheckedConstant("placeholder")
-    id = fields.String(required=True, validate=validate.Length(min=1, max=32))
-    key = fields.Base64Bytes(required=True, validate=validate.Length(min=1, max=4096))
-
-
-class LocalAccessSchema(OneOfSchema):
-    type_field = "type"
-    type_field_remove = False
-    type_schemas = {"placeholder": LocalPlaceHolderAccessSchema, "vlob": LocalVlobAccessSchema}
-
-    def get_obj_type(self, obj):
-        return obj["type"]
-
-
 class LocalFileManifestSchema(UnknownCheckedSchema):
     format = fields.CheckedConstant(1, required=True)
     type = fields.CheckedConstant("local_file_manifest", required=True)
-    user_id = fields.String(required=True)
-    device_name = fields.String(required=True)
+    author = fields.String(required=True)
     base_version = fields.Integer(required=True, validate=validate.Range(min=0))
     need_sync = fields.Boolean(required=True)
+    is_placeholder = fields.Boolean(required=True)
     created = fields.DateTime(required=True)
     updated = fields.DateTime(required=True)
     size = fields.Integer(required=True, validate=validate.Range(min=0))
@@ -110,15 +90,15 @@ class LocalFileManifestSchema(UnknownCheckedSchema):
 class LocalFolderManifestSchema(UnknownCheckedSchema):
     format = fields.CheckedConstant(1, required=True)
     type = fields.CheckedConstant("local_folder_manifest", required=True)
-    user_id = fields.String(required=True)
-    device_name = fields.String(required=True)
+    author = fields.String(required=True)
     base_version = fields.Integer(required=True, validate=validate.Range(min=0))
     need_sync = fields.Boolean(required=True)
+    is_placeholder = fields.Boolean(required=True)
     created = fields.DateTime(required=True)
     updated = fields.DateTime(required=True)
     children = fields.Map(
         fields.String(validate=validate.Length(min=1, max=256)),
-        fields.Nested(LocalAccessSchema),
+        fields.Nested(ManifestAccessSchema),
         required=True,
     )
     sharing = fields.Nested(SharingSchema)
@@ -127,6 +107,8 @@ class LocalFolderManifestSchema(UnknownCheckedSchema):
 class LocalUserManifestSchema(LocalFolderManifestSchema):
     type = fields.CheckedConstant("local_user_manifest", required=True)
     last_processed_message = fields.Integer(required=True, validate=validate.Range(min=0))
+    beacon_id = fields.String(required=True)
+
 
 
 class TypedManifestSchema(OneOfSchema):
@@ -143,3 +125,18 @@ class TypedManifestSchema(OneOfSchema):
 
     def get_obj_type(self, obj):
         return obj["type"]
+
+
+typed_manifest_schema = TypedManifestSchema()
+
+
+def dumps_manifest(manifest: dict):
+    raw, errors = typed_manifest_schema.dumps(manifest)
+    assert not errors
+    return raw.encode('utf-8')
+
+
+def loads_manifest(raw: bytes):
+    manifest, errors = typed_manifest_schema.loads(raw.decode('utf-8'))
+    assert not errors
+    return manifest

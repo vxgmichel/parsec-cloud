@@ -3,7 +3,7 @@ from typing import NewType
 from math import inf
 
 from parsec.core.local_db import LocalDBMissingEntry
-from parsec.core.fs.data import is_file_manifest, new_access
+from parsec.core.fs.data import is_file_manifest, new_block_access
 from parsec.core.fs.buffer_ordering import (
     quick_filter_block_accesses,
     Buffer,
@@ -78,12 +78,19 @@ class FSInvalidFileDescriptor(Exception):
 
 
 class LocalFileFS:
-    def __init__(self, device, signal_ns):
+    def __init__(self, device, local_folder_fs, signal_ns):
         self.signal_ns = signal_ns
+        self.local_folder_fs = local_folder_fs
         self._local_db = device.local_db
         self._opened_cursors = {}
         self._hot_files = {}
         self._next_fd = 1
+
+    def get_block(self, access):
+        return self._local_db.get(access)
+
+    def set_block(self, access, block):
+        return self._local_db.set(access, block)
 
     def _get_cursor_from_fd(self, fd):
         try:
@@ -113,7 +120,7 @@ class LocalFileFS:
 
     def _ensure_hot_file(self, access):
         # Sanity check
-        manifest = self._local_db.get(access)
+        manifest = self.local_folder_fs.get_manifest(access)
         assert is_file_manifest(manifest)
 
         hf = self._hot_files.get(access["id"])
@@ -185,7 +192,7 @@ class LocalFileFS:
         if cursor.offset > hf.size:
             return b""
 
-        manifest = self._local_db.get(cursor.access)
+        manifest = self.local_folder_fs.get_manifest(cursor.access)
         assert is_file_manifest(manifest)
 
         start = cursor.offset
@@ -207,7 +214,7 @@ class LocalFileFS:
                 if isinstance(bs.buffer, DirtyBlockBuffer):
                     access = bs.buffer.access
                     try:
-                        buff = self._local_db.get(access)
+                        buff = self.get_block(access)
                     except LocalDBMissingEntry as exc:
                         raise RuntimeError(f"Unknown local block `{access['id']}`") from exc
 
@@ -218,7 +225,7 @@ class LocalFileFS:
                 elif isinstance(bs.buffer, BlockBuffer):
                     access = bs.buffer.access
                     try:
-                        buff = self._local_db.get(access)
+                        buff = self.get_block(access)
                     except LocalDBMissingEntry:
                         missing.append(access)
                         continue
@@ -239,7 +246,7 @@ class LocalFileFS:
     def flush(self, fd):
         cursor = self._get_cursor_from_fd(fd)
 
-        manifest = self._local_db.get(cursor.access)
+        manifest = self.local_folder_fs.get_manifest(cursor.access)
         assert is_file_manifest(manifest)
 
         hf = self._get_hot_file(cursor.access)
@@ -248,23 +255,16 @@ class LocalFileFS:
 
         new_dirty_blocks = []
         for pw in hf.pending_writes:
-            block_access = new_access()
-            self._local_db.set(block_access, pw.data)
-            new_dirty_blocks.append(
-                {
-                    "id": block_access["id"],
-                    "key": block_access["key"],
-                    "offset": pw.start,
-                    "size": pw.size,
-                }
-            )
+            block_access = new_block_access(pw.data, pw.start)
+            self.set_block(block_access, pw.data)
+            new_dirty_blocks.append(block_access)
 
         # TODO: clean overwritten dirty blocks
         manifest["dirty_blocks"] += new_dirty_blocks
         manifest["size"] = hf.size
         mark_manifest_modified(manifest)
 
-        self._local_db.set(cursor.access, manifest)
+        self.local_folder_fs.set_manifest(cursor.access, manifest)
 
         hf.pending_writes.clear()
         self.signal_ns.signal("fs.entry.modified").send("local", id=cursor.access["id"])

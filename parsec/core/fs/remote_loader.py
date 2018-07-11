@@ -1,9 +1,9 @@
-import pickle
 from hashlib import sha256
 
 from parsec.utils import from_jsonb64
+from parsec.core.schemas import loads_manifest, dumps_manifest
 from parsec.core.fs.data import remote_to_local_manifest
-from parsec.encryption_manager import decrypt_with_symkey
+from parsec.core.encryption_manager import decrypt_with_symkey
 
 
 class RemoteLoader:
@@ -30,8 +30,9 @@ class RemoteLoader:
         # TODO: validate answer
         assert rep["status"] == "ok"
         ciphered = from_jsonb64(rep["blob"])
-        raw = self.encryption_manager.decrypt_with_secret_key(access["key"], ciphered)
-        remote_manifest = pickle.loads(raw)
+        raw_remote_manifest = await self.encryption_manager.decrypt_with_secret_key(access["key"], ciphered)
+        remote_manifest = loads_manifest(raw_remote_manifest)
         local_manifest = remote_to_local_manifest(remote_manifest)
+        raw_local_manifest = dumps_manifest(local_manifest)
 
-        self.local_db.set(access, local_manifest)
+        self.local_db.set(access, raw_local_manifest)

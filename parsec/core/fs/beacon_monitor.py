@@ -19,10 +19,10 @@ except ImportError:
 
 
 class BeaconMonitor(BaseAsyncComponent):
-    def __init__(self, device, local_db, signal_ns):
+    def __init__(self, device, local_folder_fs, signal_ns):
         super().__init__()
         self._device = device
-        self._local_db = local_db
+        self.local_folder_fs = local_folder_fs
         self._task_cancel_scope = None
         self._workspaces = {}
         self.signal_ns = signal_ns
@@ -34,11 +34,11 @@ class BeaconMonitor(BaseAsyncComponent):
         self._task_cancel_scope.cancel()
 
     def _retreive_beacon_key(self, beacon_id):
-        root_manifest = self._local_db.get(self._device.user_manifest_access)
+        root_manifest = self.local_folder_fs.get_manifest(self._device.user_manifest_access)
         if root_manifest["beacon_id"] == beacon_id:
             return self._device.user_manifest_access["key"]
         for child_access in root_manifest["children"].values():
-            child_manifest = self._local_db.get(child_access)
+            child_manifest = self.local_folder_fs.get_manifest(child_access)
             if child_manifest.get("beacon_id") == beacon_id:
                 return child_access["key"]
 

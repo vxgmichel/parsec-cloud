@@ -1,4 +1,5 @@
 from uuid import uuid4
+from hashlib import sha256
 import pendulum
 import nacl.secret
 import nacl.utils
@@ -8,11 +9,18 @@ def _generate_secret_key():
     return nacl.utils.random(nacl.secret.SecretBox.KEY_SIZE)
 
 
+def new_user_manifest(author):
+    manifest = new_workspace_manifest(author)
+    manifest['last_processed_message'] = 0
+    manifest['type'] = 'user_manifest'
+    return manifest
+
+
 def new_workspace_manifest(author):
     now = pendulum.now()
 
     return {
-        "type": "folder_manifest",
+        "type": "workspace_manifest",
         "author": author,
         "beacon_id": uuid4().hex,
         "created": now,
@@ -52,6 +60,10 @@ def new_file_manifest(author):
 def new_access():
     id = uuid4().hex
     return {"id": id, "rts": uuid4().hex, "wts": uuid4().hex, "key": _generate_secret_key()}
+
+
+def new_block_access(block, offset):
+    return {"id": uuid4().hex, "key": _generate_secret_key(), 'offset': offset, 'size': len(block), "digest": sha256(block).hexdigest()}
 
 
 def new_local_workspace_manifest(author):
@@ -109,7 +121,10 @@ def is_file_manifest(manifest):
 
 
 def is_folder_manifest(manifest):
-    return manifest["type"].endswith("folder_manifest")
+    for t in ('folder_manifest', 'workspace_manifest', 'user_manifest'):
+        if manifest['type'].endswith(t):
+            return True
+    return False
 
 
 def remote_to_local_manifest(manifest):

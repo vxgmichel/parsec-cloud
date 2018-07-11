@@ -4,39 +4,34 @@ from pendulum import Pendulum
 from hypothesis.stateful import RuleBasedStateMachine, initialize, rule, run_state_machine_as_test
 from hypothesis import strategies as st
 
-from parsec.core.fs.local_file_fs import LocalFileFS, FSInvalidFileDescriptor, FSBlocksLocalMiss
-from parsec.core.fs.data import new_access, new_local_file_manifest
+from parsec.core.fs.local_file_fs import FSInvalidFileDescriptor, FSBlocksLocalMiss
+from parsec.core.fs.data import new_block_access, new_access, new_local_file_manifest
 from parsec.core.local_db import LocalDBMissingEntry
 
 from tests.common import freeze_time
 
 
-@pytest.fixture
-def local_file_fs(alice, signal_ns):
-    return LocalFileFS(alice, signal_ns)
-
-
 class File:
-    def __init__(self, device, access):
-        self.device = device
+    def __init__(self, local_folder_fs, access):
         self.access = access
+        self.local_folder_fs = local_folder_fs
 
     def ensure_manifest(self, **kwargs):
-        manifest = self.device.local_db.get(self.access)
+        manifest = self.local_folder_fs.get_manifest(self.access)
         for k, v in kwargs.items():
             assert manifest[k] == v
 
 
 @pytest.fixture
-def foo_txt(alice):
+def foo_txt(alice, local_folder_fs):
     access = new_access()
     with freeze_time("2000-01-02"):
         manifest = new_local_file_manifest(alice.id)
         manifest["is_placeholder"] = False
         manifest["need_sync"] = False
         manifest["base_version"] = 1
-    alice.local_db.set(access, manifest)
-    return File(alice, access)
+    local_folder_fs.set_manifest(access, manifest)
+    return File(local_folder_fs, access)
 
 
 def test_open_unknown_file(local_file_fs):
@@ -135,29 +130,31 @@ def test_flush_file(local_file_fs, foo_txt):
     )
 
 
-def test_block_not_loaded_entry(alice, local_file_fs, foo_txt):
-    foo_manifest = alice.local_db.get(foo_txt.access)
-    block1_access = {**new_access(), "offset": 0, "size": 10}
-    block2_access = {**new_access(), "offset": 10, "size": 5}
+def test_block_not_loaded_entry(local_folder_fs, local_file_fs, foo_txt):
+    foo_manifest = local_folder_fs.get_manifest(foo_txt.access)
+    block1 = b'a' * 10
+    block2 = b'b' * 5
+    block1_access = new_block_access(block1, 0)
+    block2_access = new_block_access(block2, 10)
     foo_manifest["blocks"].append(block1_access)
     foo_manifest["blocks"].append(block2_access)
     foo_manifest["size"] = 15
-    alice.local_db.set(foo_txt.access, foo_manifest)
+    local_folder_fs.set_manifest(foo_txt.access, foo_manifest)
 
     fd = local_file_fs.open(foo_txt.access)
     with pytest.raises(FSBlocksLocalMiss) as exc:
         local_file_fs.read(fd, 14)
     assert exc.value.accesses == [block1_access, block2_access]
 
-    alice.local_db.set(block1_access, b"a" * 10)
-    alice.local_db.set(block2_access, b"b" * 5)
+    local_file_fs.set_block(block1_access, block1)
+    local_file_fs.set_block(block2_access, block2)
 
     data = local_file_fs.read(fd, 14)
-    assert data == b"a" * 10 + b"b" * 4
+    assert data == block1 + block2[:4]
 
 
 @pytest.mark.slow
-def test_file_operations(tmpdir, hypothesis_settings, signal_ns, device_factory):
+def test_file_operations(tmpdir, hypothesis_settings, signal_ns, device_factory, local_file_fs_factory):
     tentative = 0
 
     class FileOperationsStateMachine(RuleBasedStateMachine):
@@ -166,11 +163,11 @@ def test_file_operations(tmpdir, hypothesis_settings, signal_ns, device_factory)
             nonlocal tentative
             tentative += 1
 
-            self.device = device_factory("alice", f"dev{tentative}")
-            self.local_file_fs = LocalFileFS(self.device, signal_ns)
+            self.device = device_factory()
+            self.local_file_fs = local_file_fs_factory(self.device)
             self.access = new_access()
             manifest = new_local_file_manifest(self.device.id)
-            self.device.local_db.set(self.access, manifest)
+            self.local_file_fs.local_folder_fs.set_manifest(self.access, manifest)
 
             self.fd = self.local_file_fs.open(self.access)
             self.file_oracle_path = tmpdir / f"oracle-test-{tentative}.txt"

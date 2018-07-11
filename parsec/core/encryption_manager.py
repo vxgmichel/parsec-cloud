@@ -1,6 +1,7 @@
 import attr
 import logbook
 import json
+import pickle
 import hashlib
 from nacl.public import SealedBox, PublicKey
 from nacl.secret import SecretBox
@@ -118,34 +119,6 @@ def decrypt_with_symkey(key: bytes, ciphered: bytes) -> bytes:
         raise MessageEncryptionError() from exc
 
 
-def encrypt_for_local(key: bytes, msg: dict) -> bytes:
-    """
-    Raises:
-        MessageFormatError: if msg is not JSON-encodable.
-        MessageEncryptionError: if key is invalid.
-    """
-    try:
-        encoded_msg = json.dumps(msg).encode("utf-8")
-    except TypeError as exc:
-        raise MessageFormatError("Cannot encode message as JSON") from exc
-
-    return encrypt_with_symkey(key, encoded_msg)
-
-
-def decrypt_for_local(key: bytes, ciphered_msg: bytes) -> dict:
-    """
-    Raises:
-        MessageFormatError: if deciphered message is not JSON-decodable.
-        MessageEncryptionError: if key is invalid.
-    """
-    encoded_msg = decrypt_with_symkey(key, ciphered_msg)
-
-    try:
-        return json.loads(encoded_msg.decode("utf-8"))
-    except json.JSONDecodeError as exc:
-        raise MessageFormatError("Message is not valid json data") from exc
-
-
 def sign_and_add_meta(device: Device, raw_msg: bytes) -> bytes:
     """
     Raises:
@@ -173,32 +146,26 @@ def extract_meta_from_signature(signed_with_meta: bytes) -> tuple:
         ) from exc
 
 
-def encrypt_for_self(author: Device, msg: dict) -> bytes:
-    return encrypt_for(author, author, msg)
+def encrypt_for_self(author: Device, data: bytes) -> bytes:
+    return encrypt_for(author, author, data)
 
 
-def encrypt_for(author: Device, recipient: RemoteUser, msg: dict) -> bytes:
+def encrypt_for(author: Device, recipient: RemoteUser, data: bytes) -> bytes:
     """
     Sign and encrypt a message.
 
     Raises:
-        MessageFormatError: if the message is not JSON-serializable.
         MessageEncryptionError: if encryption fails.
         MessageSignatureError: if signature fails.
     """
     try:
-        encoded_msg = json.dumps(msg).encode("utf-8")
-    except TypeError as exc:
-        raise MessageFormatError("Cannot encode message as JSON") from exc
-
-    try:
-        signed_msg_with_meta = sign_and_add_meta(author, encoded_msg)
+        signed_with_meta = sign_and_add_meta(author, data)
     except CryptoError as exc:
         raise MessageSignatureError() from exc
 
     try:
         box = SealedBox(recipient.user_pubkey)
-        return box.encrypt(signed_msg_with_meta)
+        return box.encrypt(signed_with_meta)
     except CryptoError as exc:
         raise MessageEncryptionError() from exc
 
@@ -232,45 +199,32 @@ def verify_signature_from(author: RemoteDevice, signed_text: bytes) -> dict:
     Returns: The plain text message as a dict.
 
     Raises:
-        MessageFormatError: if the message is not valid JSON.
         MessageSignatureError: if signature was forged or otherwise corrupt.
     """
     try:
-        encoded_msg = author.device_verifykey.verify(signed_text)
+        return author.device_verifykey.verify(signed_text)
     except CryptoError as exc:
         raise MessageSignatureError() from exc
 
-    try:
-        return json.loads(encoded_msg.decode("utf-8"))
 
-    except json.JSONDecodeError as exc:
-        raise MessageFormatError("Message is not valid json data") from exc
-
-
-def encrypt_with_secret_key(author: Device, key: bytes, msg: dict) -> bytes:
+def encrypt_with_secret_key(author: Device, key: bytes, data: bytes) -> bytes:
     """
     Sign and encrypt a message with a symetric key.
 
     Raises:
-        MessageFormatError: if the message is not JSON-serializable.
         MessageSignatureError: if the signature operation fails
         MessageEncryptionError: if encryption operation fails.
     """
-    try:
-        encoded_msg = json.dumps(msg).encode("utf-8")
-    except TypeError as exc:
-        raise MessageFormatError("Cannot encode message as JSON") from exc
-
-    signed_msg_with_meta = sign_and_add_meta(author, encoded_msg)
+    signed_with_meta = sign_and_add_meta(author, data)
 
     try:
         box = SecretBox(key)
-        return box.encrypt(signed_msg_with_meta)
+        return box.encrypt(signed_with_meta)
     except CryptoError as exc:
         raise MessageEncryptionError() from exc
 
 
-def decrypt_with_secret_key(key: bytes, ciphered_msg: dict) -> tuple:
+def decrypt_with_secret_key(key: bytes, ciphered_msg: bytes) -> tuple:
     """
     Decrypt a message with a symetric key.
 
@@ -322,7 +276,9 @@ class EncryptionManager(BaseAsyncComponent):
             "broadcast_key": to_jsonb64(rep["broadcast_key"]),
             "devices": {k: to_jsonb64(v["verify_key"]) for k, v in rep["devices"].items()},
         }
-        self._local_db.set(self._build_remote_user_local_access(user_id), user_data)
+        # TODO: use schema here
+        raw_user_data = pickle.dumps(user_data)
+        self._local_db.set(self._build_remote_user_local_access(user_id), raw_user_data)
 
     def _build_remote_user_local_access(self, user_id):
         return {
@@ -332,7 +288,8 @@ class EncryptionManager(BaseAsyncComponent):
 
     def _fetch_remote_user_from_local(self, user_id):
         try:
-            user_data = self._local_db.get(self._build_remote_user_local_access(user_id))
+            raw_user_data = self._local_db.get(self._build_remote_user_local_access(user_id))
+            user_data = pickle.loads(raw_user_data)
             return RemoteUser(user_id, from_jsonb64(user_data["broadcast_key"]))
 
         except LocalDBMissingEntry as exc:
@@ -340,7 +297,8 @@ class EncryptionManager(BaseAsyncComponent):
 
     def _fetch_remote_device_from_local(self, user_id, device_name):
         try:
-            user_data = self._local_db.get(self._build_remote_user_local_access(user_id))
+            raw_user_data = self._local_db.get(self._build_remote_user_local_access(user_id))
+            user_data = pickle.loads(raw_user_data)
             try:
                 device_b64_pubkey = user_data["devices"][device_name]
             except KeyError:
@@ -419,7 +377,7 @@ class EncryptionManager(BaseAsyncComponent):
         self._mem_cache[user_id] = remote_user
         return remote_user
 
-    async def encrypt(self, recipient: str, msg: dict) -> bytes:
+    async def encrypt_for(self, recipient: str, msg: dict) -> bytes:
         user = await self.fetch_remote_user(recipient)
         if not user:
             raise MessageEncryptionError("Unknown recipient `%s`" % recipient)
@@ -428,7 +386,7 @@ class EncryptionManager(BaseAsyncComponent):
     async def encrypt_for_self(self, msg: dict) -> bytes:
         return encrypt_for_self(self.device, msg)
 
-    async def decrypt(self, ciphered_msg: bytes) -> dict:
+    async def decrypt_for(self, ciphered_msg: bytes) -> dict:
         user_id, device_name, signed_msg = decrypt_for(self.device, ciphered_msg)
         author_device = await self.fetch_remote_device(user_id, device_name)
         if not author_device:
@@ -438,15 +396,15 @@ class EncryptionManager(BaseAsyncComponent):
             )
         return verify_signature_from(author_device, signed_msg)
 
-    async def encrypt_with_secret_key(self, key: bytes, msg: dict) -> bytes:
-        return encrypt_with_secret_key(self.device, key, msg)
+    def encrypt_with_secret_key(self, key: bytes, data: bytes) -> bytes:
+        return encrypt_with_secret_key(self.device, key, data)
 
-    async def decrypt_with_secret_key(self, key: bytes, msg: dict) -> dict:
-        user_id, device_name, signed_msg = decrypt_with_secret_key(key, msg)
+    async def decrypt_with_secret_key(self, key: bytes, ciphered: bytes) -> dict:
+        user_id, device_name, signed = decrypt_with_secret_key(key, ciphered)
         author_device = await self.fetch_remote_device(user_id, device_name)
         if not author_device:
             raise MessageSignatureError(
                 "Message is said to be signed by `%s@%s`, but this device cannot be found on the backend."
                 % (user_id, device_name)
             )
-        return verify_signature_from(author_device, signed_msg)
+        return verify_signature_from(author_device, signed)

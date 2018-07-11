@@ -1,6 +1,7 @@
 import pendulum
 
 from parsec.core.local_db import LocalDBMissingEntry
+from parsec.core.schemas import dumps_manifest, loads_manifest
 from parsec.core.fs.data import (
     is_file_manifest,
     is_folder_manifest,
@@ -47,7 +48,7 @@ class LocalFolderFS:
     def init(self):
         # Retrieve root beacon
         try:
-            root_manifest = self._local_db.get(self.root_access)
+            root_manifest = self.get_manifest(self.root_access)
             self.signal_ns.signal("fs.workspace.loaded").send(
                 None, path="/", id=self.root_access, beacon_id=root_manifest["beacon_id"]
             )
@@ -58,7 +59,7 @@ class LocalFolderFS:
         def _recursive_dump(access):
             dump_data = {"access": access}
             try:
-                manifest = self._local_db.get(access)
+                manifest = self.get_manifest(access)
                 dump_data.update(manifest)
                 if is_folder_manifest(manifest):
                     for child_name, child_access in manifest["children"].items():
@@ -71,11 +72,13 @@ class LocalFolderFS:
 
         return _recursive_dump(self.root_access)
 
-    def set_manifest(self, access, manifest):
-        self._local_db.set(access, manifest)
-
     def get_manifest(self, access):
-        return self._local_db.get(access)
+        raw = self._local_db.get(access)
+        return loads_manifest(raw)
+
+    def set_manifest(self, access, manifest):
+        raw = dumps_manifest(manifest)
+        self._local_db.set(access, raw)
 
     def mark_outdated_manifest(self, access):
         self._local_db.clear(access)
@@ -94,11 +97,11 @@ class LocalFolderFS:
 
     def get_entry_path(self, entry_id):
         if entry_id == self.root_access["id"]:
-            return "/", self.root_access, self._local_db.get(self.root_access)
+            return "/", self.root_access, self.get_manifest(self.root_access)
 
         # Brute force style
         def _recursive_search(access, path):
-            manifest = self._local_db.get(access)
+            manifest = self.get_manifest(access)
             if access["id"] == entry_id:
                 return path, access, manifest
 
@@ -119,7 +122,7 @@ class LocalFolderFS:
 
         def _retrieve_entry_recursive(curr_access, curr_path, hops):
             try:
-                curr_manifest = self._local_db.get(curr_access)
+                curr_manifest = self.get_manifest(curr_access)
             except LocalDBMissingEntry as exc:
                 raise FSManifestLocalMiss(curr_access) from exc
 
@@ -210,8 +213,8 @@ class LocalFolderFS:
         child_manifest = new_local_file_manifest(self.local_author)
         manifest["children"][child_name] = child_access
         mark_manifest_modified(manifest)
-        self._local_db.set(access, manifest)
-        self._local_db.set(child_access, child_manifest)
+        self.set_manifest(access, manifest)
+        self.set_manifest(child_access, child_manifest)
         self.signal_ns.signal("fs.entry.modified").send("local", id=access["id"])
         self.signal_ns.signal("fs.entry.created").send("local", id=child_access["id"])
 
@@ -228,8 +231,8 @@ class LocalFolderFS:
         child_manifest = new_local_folder_manifest(self.local_author)
         manifest["children"][child_name] = child_access
         mark_manifest_modified(manifest)
-        self._local_db.set(access, manifest)
-        self._local_db.set(child_access, child_manifest)
+        self.set_manifest(access, manifest)
+        self.set_manifest(child_access, child_manifest)
         self.signal_ns.signal("fs.entry.modified").send("local", id=access["id"])
         self.signal_ns.signal("fs.entry.created").send("local", id=child_access["id"])
 
@@ -247,7 +250,7 @@ class LocalFolderFS:
         except KeyError:
             raise FileNotFoundError(2, "No such file or directory", path)
 
-        item_manifest = self._local_db.get(item_access)
+        item_manifest = self.get_manifest(item_access)
         if is_folder_manifest(item_manifest):
             if expect == "file":
                 raise IsADirectoryError(21, "Is a directory", path)
@@ -256,7 +259,7 @@ class LocalFolderFS:
         elif expect == "folder":
             raise NotADirectoryError(20, "Not a directory", path)
 
-        self._local_db.set(parent_access, parent_manifest)
+        self.set_manifest(parent_access, parent_manifest)
         self.signal_ns.signal("fs.entry.modified").send("local", id=parent_access["id"])
 
     def delete(self, path):
@@ -295,8 +298,8 @@ class LocalFolderFS:
 
             existing_entry_access = parent_manifest["children"].get(child_dst)
             if existing_entry_access:
-                src_entry_manifest = self._local_db.get(entry)
-                existing_entry_manifest = self._local_db.get(existing_entry_access)
+                src_entry_manifest = self.get_manifest(entry)
+                existing_entry_manifest = self.get_manifest(existing_entry_access)
                 if is_folder_manifest(src_entry_manifest):
                     if is_file_manifest(existing_entry_manifest):
                         raise NotADirectoryError(20, "Not a directory")
@@ -309,7 +312,7 @@ class LocalFolderFS:
             parent_manifest["children"][child_dst] = entry
             mark_manifest_modified(parent_manifest)
 
-            self._local_db.set(parent_access, parent_manifest)
+            self.set_manifest(parent_access, parent_manifest)
             self.signal_ns.signal("fs.entry.modified").send("local", id=parent_access["id"])
 
         else:
@@ -331,8 +334,8 @@ class LocalFolderFS:
 
             existing_entry_access = parent_dst_manifest["children"].get(child_dst)
             if existing_entry_access:
-                src_entry_manifest = self._local_db.get(entry)
-                existing_entry_manifest = self._local_db.get(existing_entry_access)
+                src_entry_manifest = self.get_manifest(entry)
+                existing_entry_manifest = self.get_manifest(existing_entry_access)
                 if is_folder_manifest(src_entry_manifest):
                     if is_file_manifest(existing_entry_manifest):
                         raise NotADirectoryError(20, "Not a directory")
@@ -347,8 +350,8 @@ class LocalFolderFS:
             mark_manifest_modified(parent_src_manifest)
             mark_manifest_modified(parent_dst_manifest)
 
-            self._local_db.set(parent_src_access, parent_src_manifest)
-            self._local_db.set(parent_dst_access, parent_dst_manifest)
+            self.set_manifest(parent_src_access, parent_src_manifest)
+            self.set_manifest(parent_dst_access, parent_dst_manifest)
 
             self.signal_ns.signal("fs.entry.modified").send("local", id=parent_src_access["id"])
             self.signal_ns.signal("fs.entry.modified").send("local", id=parent_dst_access["id"])

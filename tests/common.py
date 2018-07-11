@@ -14,12 +14,13 @@ class InMemoryLocalDB(LocalDB):
 
     def get(self, access):
         try:
-            return deepcopy(self._data[access["id"]])
+            return self._data[access["id"]]
         except KeyError:
             raise LocalDBMissingEntry(access)
 
-    def set(self, access, manifest):
-        self._data[access["id"]] = deepcopy(manifest)
+    def set(self, access, data):
+        assert isinstance(data, (bytes, bytearray))
+        self._data[access["id"]] = data
 
     def clear(self, access):
         del self._data[access["id"]]

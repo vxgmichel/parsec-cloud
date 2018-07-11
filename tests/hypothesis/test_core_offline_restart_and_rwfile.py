@@ -30,7 +30,7 @@ class RestartCore(Exception):
     pass
 
 @pytest.mark.trio
-async def test_reproduce(core_factory, core_sock_factory, alice):
+async def test_reproduce(alice, core_factory, core_sock_factory):
     config = {{
         "block_size": BLOCK_SIZE,
     }}

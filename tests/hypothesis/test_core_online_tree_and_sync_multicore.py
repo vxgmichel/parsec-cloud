@@ -7,7 +7,6 @@ from hypothesis.stateful import Bundle
 
 from parsec.utils import to_jsonb64
 
-from tests.common import connect_core, core_factory, backend_factory, run_app
 from tests.hypothesis.common import rule, rule_once, failure_reproducer, reproduce_rule
 
 
@@ -40,7 +39,12 @@ def compare_fs_dumps(entry_1, entry_2):
 @pytest.mark.slow
 @pytest.mark.trio
 async def test_online_core_tree_and_sync_multicore(
-    TrioDriverRuleBasedStateMachine, tcp_stream_spy, backend_addr, tmpdir, alice, alice2
+    TrioDriverRuleBasedStateMachine,
+    server_factory,
+    backend_factory,
+    core_factory,
+    core_sock_factory,
+    device_factory,
 ):
     @failure_reproducer(
         """
@@ -61,50 +65,39 @@ async def test_reproduce(running_backend, core, alice_core_sock, core2, alice2_c
     class MultiCoreTreeAndSync(TrioDriverRuleBasedStateMachine):
         Files = Bundle("file")
         Folders = Bundle("folder")
-        count = 0
 
         async def trio_runner(self, task_status):
-            type(self).count += 1
-            workdir = tmpdir.mkdir("try-%s" % self.count)
-
-            backend_config = {"blockstore_postgresql": True}
-            core_config = {"base_settings_path": workdir.strpath, "backend_addr": backend_addr}
-            alice.local_storage_db_path = str(workdir / "alice-local_storage")
-            alice2.local_storage_db_path = str(workdir / "alice2-local_storage")
             self.core_cmd = lambda x, y: self.communicator.send((x, y))
 
-            async with backend_factory(**backend_config) as backend:
-                await backend.user.create(
-                    author="<backend-fixture>",
-                    user_id=alice.user_id,
-                    broadcast_key=alice.user_pubkey.encode(),
-                    devices=[
-                        (alice.device_name, alice.device_verifykey.encode()),
-                        (alice2.device_name, alice2.device_verifykey.encode()),
-                    ],
-                )
+            device1 = device_factory()
+            device2 = device_factory(user_id=device1.user_id)
+            backend = await backend_factory(devices=[device1, device2])
+            server = server_factory(backend.handle_client)
 
-                async with run_app(backend) as backend_connection_factory:
-                    with tcp_stream_spy.install_hook(backend_addr, backend_connection_factory):
-                        async with core_factory(**core_config) as self.core_1, core_factory(
-                            **core_config
-                        ) as self.core_2:
+            core1 = await core_factory(
+                devices=[device1], config={"backend_addr": server.addr}
+            )
+            core2 = await core_factory(
+                devices=[device2], config={"backend_addr": server.addr}
+            )
+            try:
+                await core1.login(device1)
+                await core2.login(device2)
+                sockets = {
+                    "core_1": core_sock_factory(core1),
+                    "core_2": core_sock_factory(core2),
+                }
 
-                            await self.core_1.login(alice)
-                            await self.core_2.login(alice2)
+                task_status.started()
 
-                            async with connect_core(self.core_1) as sock_1, connect_core(
-                                self.core_2
-                            ) as sock_2:
-                                task_status.started()
-
-                                sockets = {"core_1": sock_1, "core_2": sock_2}
-
-                                while True:
-                                    core, msg = await self.communicator.trio_recv()
-                                    await sockets[core].send(msg)
-                                    rep = await sockets[core].recv()
-                                    await self.communicator.trio_respond(rep)
+                while True:
+                    core, msg = await self.communicator.trio_recv()
+                    await sockets[core].send(msg)
+                    rep = await sockets[core].recv()
+                    await self.communicator.trio_respond(rep)
+            finally:
+                await core1.teardown()
+                await core2.teardown()
 
         @rule_once(target=Folders)
         def get_root(self):

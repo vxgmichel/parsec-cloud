@@ -165,7 +165,6 @@ def rule_selector():
     class CoreOnlineTreeAndSync(TrioDriverRuleBasedStateMachine):
         Files = Bundle("file")
         Folders = Bundle("folder")
-        count = 0
 
         async def trio_runner(self, task_status):
             self.sys_cmd = lambda x: self.communicator.send(("sys", x))

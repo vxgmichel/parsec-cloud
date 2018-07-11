@@ -4,7 +4,6 @@ from hypothesis import strategies as st, note
 
 from parsec.utils import to_jsonb64, from_jsonb64
 
-from tests.common import connect_core, core_factory, backend_factory, run_app
 from tests.hypothesis.common import rule, failure_reproducer, reproduce_rule
 
 
@@ -58,7 +57,12 @@ class FileOracle:
 @pytest.mark.slow
 @pytest.mark.trio
 async def test_core_online_rw_and_sync(
-    TrioDriverRuleBasedStateMachine, tcp_stream_spy, backend_addr, tmpdir, alice
+    TrioDriverRuleBasedStateMachine,
+    server_factory,
+    backend_factory,
+    core_factory,
+    core_sock_factory,
+    device_factory,
 ):
     class RestartCore(Exception):
         def __init__(self, reset_local_storage=False):
@@ -72,7 +76,6 @@ from copy import deepcopy
 
 from parsec.utils import to_jsonb64, from_jsonb64
 
-from tests.common import connect_core, core_factory
 from tests.hypothesis.test_core_online_rw_and_sync import FileOracle, BLOCK_SIZE
 
 class RestartCore(Exception):
@@ -82,12 +85,7 @@ class ResetCore(Exception):
     pass
 
 @pytest.mark.trio
-async def test_reproduce(tmpdir, running_backend, backend_addr, alice):
-    config = {{
-        "base_settings_path": tmpdir.strpath,
-        "backend_addr": backend_addr,
-        "block_size": BLOCK_SIZE,
-    }}
+async def test_reproduce(running_backend, alice, core_factory, core_sock_factory):
     bootstrapped = False
     file_oracle = FileOracle(base_version=1)
     to_run_rules = rule_selector()
@@ -96,71 +94,65 @@ async def test_reproduce(tmpdir, running_backend, backend_addr, alice):
 
     while not done:
         try:
-            async with core_factory(**config) as core:
-                await core.login(alice)
-                if not bootstrapped:
-                    await core.fs.file_create("/foo.txt")
-                    bootstrapped = True
-                if need_boostrap_sync:
-                    need_boostrap_sync = False
-                    await core.fs.sync("/")
+            core = await core_factory(devices=[alice], config={{"block_size": BLOCK_SIZE}})
+            await core.login(alice)
+            if not bootstrapped:
+                await core.fs.file_create("/foo.txt")
+                bootstrapped = True
+            if need_boostrap_sync:
+                need_boostrap_sync = False
+                await core.fs.sync("/")
 
-                async with connect_core(core) as sock:
-                    while True:
-                        afunc = next(to_run_rules, None)
-                        if not afunc:
-                            done = True
-                            break
-                        await afunc(sock, file_oracle)
+            sock = core_sock_factory(core)
+            while True:
+                afunc = next(to_run_rules, None)
+                if not afunc:
+                    done = True
+                    break
+                await afunc(sock, file_oracle)
 
         except RestartCore:
             pass
 
         except ResetCore:
-            alice.local_storage_db_path += '-reset'
+            alice.local_db._data.clear()  # TODO: improve this
             need_boostrap_sync = True
 
 def rule_selector():
     {body}
 """
     )
-    class CoreOnline(TrioDriverRuleBasedStateMachine):
+    class CoreOnlineRwAndSync(TrioDriverRuleBasedStateMachine):
         count = 0
 
         async def trio_runner(self, task_status):
-            type(self).count += 1
-            workdir = tmpdir.mkdir("try-%s" % self.count)
-
-            backend_config = {"blockstore_postgresql": True}
-            core_config = {
-                "base_settings_path": workdir.strpath,
-                "backend_addr": backend_addr,
-                "block_size": BLOCK_SIZE,
-            }
-            alice.local_storage_db_path = str(workdir / "alice-local_storage")
             self.sys_cmd = lambda x: self.communicator.send(("sys", x))
             self.core_cmd = lambda x: self.communicator.send(("core", x))
             self.file_oracle = FileOracle(base_version=1)
 
+            device = device_factory()
+            backend = await backend_factory(devices=[device])
+            server = server_factory(backend.handle_client)
+
             async def run_core(on_ready):
-                async with core_factory(**core_config) as core:
+                core = await core_factory(
+                    devices=[device], config={"backend_addr": server.addr, 'block_size': BLOCK_SIZE}
+                )
+                await core.login(device)
+                sock = core_sock_factory(core)
 
-                    await core.login(alice)
-                    async with connect_core(core) as sock:
+                await on_ready(core)
+                while True:
+                    target, msg = await self.communicator.trio_recv()
+                    if target == "core":
+                        await sock.send(msg)
+                        rep = await sock.recv()
+                        await self.communicator.trio_respond(rep)
+                    elif msg == "restart_core!":
+                        raise RestartCore()
 
-                        await on_ready(core)
-
-                        while True:
-                            target, msg = await self.communicator.trio_recv()
-                            if target == "core":
-                                await sock.send(msg)
-                                rep = await sock.recv()
-                                await self.communicator.trio_respond(rep)
-                            elif msg == "restart_core!":
-                                raise RestartCore()
-
-                            elif msg == "reset_core!":
-                                raise RestartCore(reset_local_storage=True)
+                    elif msg == "reset_core!":
+                        raise RestartCore(reset_local_storage=True)
 
             async def bootstrap_core(core):
                 await core.fs.file_create("/foo.txt")
@@ -180,29 +172,16 @@ def rule_selector():
             async def restart_core_done(core):
                 await self.communicator.trio_respond(True)
 
-            async with backend_factory(**backend_config) as backend:
-
-                await backend.user.create(
-                    author="<backend-fixture>",
-                    user_id=alice.user_id,
-                    broadcast_key=alice.user_pubkey.encode(),
-                    devices=[(alice.device_name, alice.device_verifykey.encode())],
-                )
-
-                async with run_app(backend) as backend_connection_factory:
-
-                    with tcp_stream_spy.install_hook(backend_addr, backend_connection_factory):
-
-                        on_ready = bootstrap_core
-                        while True:
-                            try:
-                                await run_core(on_ready)
-                            except RestartCore as exc:
-                                if exc.reset_local_storage:
-                                    on_ready = reset_core_done
-                                    alice.local_storage_db_path += "-reset"
-                                else:
-                                    on_ready = restart_core_done
+            on_ready = bootstrap_core
+            while True:
+                try:
+                    await run_core(on_ready)
+                except RestartCore as exc:
+                    if exc.reset_local_storage:
+                        on_ready = reset_core_done
+                        device.local_db._data.clear()  # TODO: improve this
+                    else:
+                        on_ready = restart_core_done
 
         @rule(
             size=st.integers(min_value=0, max_value=PLAYGROUND_SIZE),
@@ -354,4 +333,4 @@ yield afunc
             assert rep is True
             self.file_oracle.reset_core()
 
-    await CoreOnline.run_test()
+    await CoreOnlineRwAndSync.run_test()

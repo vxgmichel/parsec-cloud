@@ -193,12 +193,14 @@ def device_factory():
     devices = {}
     count = 0
 
-    def _device_factory(user_id=None, device_name="dev1"):
+    def _device_factory(user_id=None, device_name=None):
         nonlocal count
         count += 1
 
         if not user_id:
             user_id = f"user-{count}"
+        if not device_name:
+            device_name = f"device-{count}"
 
         device_id = f"{user_id}@{device_name}"
         assert device_id not in devices

@@ -15,6 +15,7 @@ from parsec.core.fs.remote_loader import RemoteLoader
 
 class FS(BaseAsyncComponent):
     def __init__(self, device, backend_conn, signal_ns):
+        super().__init__()
         self.signal_ns = signal_ns
         self._device = device
 

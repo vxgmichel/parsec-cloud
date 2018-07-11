@@ -89,7 +89,7 @@ async def event_listen(req: dict, client_ctx: ClientContext, core: Core) -> dict
     if event_msg["event"] == "device_try_claim_submitted":
         config_try_id = event_msg["config_try_id"]
         try:
-            rep = await core.backend_connection.send(
+            rep = await core.backend_cmds_sender.send(
                 {"cmd": "device_get_configuration_try", "config_try_id": config_try_id}
             )
         except BackendNotAvailable:

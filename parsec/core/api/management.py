@@ -51,7 +51,7 @@ async def user_invite(req: dict, client_ctx: ClientContext, core: Core) -> dict:
 
     msg = cmd_USER_INVITE_Schema().load(req)
     try:
-        rep = await core.backend_connection.send({"cmd": "user_invite", "user_id": msg["user_id"]})
+        rep = await core.backend_cmds_sender.send({"cmd": "user_invite", "user_id": msg["user_id"]})
     except BackendNotAvailable:
         return {"status": "backend_not_availabled", "reason": "Backend not available"}
 
@@ -101,7 +101,7 @@ async def user_claim(req: dict, client_ctx: ClientContext, core: Core) -> dict:
 
 async def _backend_passthrough(core: Core, req: dict) -> dict:
     try:
-        rep = await core.backend_connection.send(req)
+        rep = await core.backend_cmds_sender.send(req)
     except BackendNotAvailable:
         return {"status": "backend_not_availabled", "reason": "Backend not available"}
 
@@ -176,7 +176,7 @@ async def device_accept_configuration_try(req: dict, client_ctx: ClientContext, 
     msg = cmd_DEVICE_ACCEPT_CONFIGURATION_TRY_Schema().load(req)
 
     try:
-        rep = await core.backend_connection.send(
+        rep = await core.backend_cmds_sender.send(
             {"cmd": "device_get_configuration_try", "config_try_id": msg["config_try_id"]}
         )
     except BackendNotAvailable:
@@ -199,7 +199,7 @@ async def device_accept_configuration_try(req: dict, client_ctx: ClientContext, 
     ciphered_user_manifest_access = box.encrypt(user_manifest_access_raw.encode())
 
     try:
-        rep = await core.backend_connection.send(
+        rep = await core.backend_cmds_sender.send(
             {
                 "cmd": "device_accept_configuration_try",
                 "config_try_id": msg["config_try_id"],

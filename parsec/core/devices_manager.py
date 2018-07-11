@@ -51,6 +51,7 @@ class DeviceConfSchema(UnknownCheckedSchema):
     user_privkey = fields.Base64Bytes(required=True)
     device_signkey = fields.Base64Bytes(required=True)
     user_manifest_access = fields.Base64Bytes(required=True)
+    local_symkey = fields.Base64Bytes(required=True)
     encryption = fields.String(validate=validate.OneOf({"quedalle", "password"}), required=True)
     salt = fields.Base64Bytes()
 

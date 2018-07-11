@@ -18,6 +18,7 @@ def encryption_manager_factory(nursery, alice, backend_cmds_sender_factory):
         em = EncryptionManager(alice, bcs)
         await em.init(nursery)
         return em
+
     return _encryption_manager_factory
 
 

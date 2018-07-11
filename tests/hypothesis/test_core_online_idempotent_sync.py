@@ -45,7 +45,9 @@ async def test_online_core_idempotent_sync(
             self.device = device_factory()
             self.backend = await backend_factory(devices=[self.device])
             server = server_factory(self.backend.handle_client)
-            self.core = await core_factory(devices=[self.device], config={'backend_addr': server.addr})
+            self.core = await core_factory(
+                devices=[self.device], config={"backend_addr": server.addr}
+            )
             await self.core.login(self.device)
 
             await self.core.fs.file_create("/good_file.txt")

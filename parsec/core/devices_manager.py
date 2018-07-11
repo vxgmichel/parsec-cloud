@@ -93,7 +93,9 @@ class Device:
     def __repr__(self):
         return f"<{type(self).__name__}(id={self.id!r}, local_db={self.local_db!r})>"
 
-    def __init__(self, id, user_privkey, device_signkey, local_symkey, user_manifest_access, local_db):
+    def __init__(
+        self, id, user_privkey, device_signkey, local_symkey, user_manifest_access, local_db
+    ):
         assert is_valid_device_id(id)
         self.id = id
         self.user_id, self.device_name = id.split("@")
@@ -169,14 +171,14 @@ class DevicesManager:
             device_conf["encryption"] = "password"
             device_conf["device_signkey"] = box.encrypt(device_signkey)
             device_conf["user_privkey"] = box.encrypt(user_privkey)
-            device_conf['local_symkey'] = box.encrypt(local_symkey)
+            device_conf["local_symkey"] = box.encrypt(local_symkey)
             device_conf["user_manifest_access"] = box.encrypt(user_manifest_access_raw.encode())
         else:
             device_conf["encryption"] = "quedalle"
             # Feel dirty just writting this...
             device_conf["device_signkey"] = device_signkey
             device_conf["user_privkey"] = user_privkey
-            device_conf['local_symkey'] = local_symkey
+            device_conf["local_symkey"] = local_symkey
             device_conf["user_manifest_access"] = user_manifest_access_raw.encode()
 
         device_key_path = device_conf_path / "key.json"
@@ -206,7 +208,7 @@ class DevicesManager:
             try:
                 user_privkey = box.decrypt(device_conf["user_privkey"])
                 device_signkey = box.decrypt(device_conf["device_signkey"])
-                local_symkey = box.decrypt(device_conf['local_symkey'])
+                local_symkey = box.decrypt(device_conf["local_symkey"])
                 user_manifest_access_raw = box.decrypt(device_conf["user_manifest_access"]).decode()
                 user_manifest_access, errors = user_manifest_access_schema.loads(
                     user_manifest_access_raw
@@ -227,7 +229,7 @@ class DevicesManager:
 
             user_privkey = device_conf["user_privkey"]
             device_signkey = device_conf["device_signkey"]
-            local_symkey = device_conf['local_symkey']
+            local_symkey = device_conf["local_symkey"]
             user_manifest_access, errors = user_manifest_access_schema.loads(
                 device_conf["user_manifest_access"]
             )

@@ -31,10 +31,10 @@ class LocalDB:
             raw = file.read_bytes()
         except FileNotFoundError:
             raise LocalDBMissingEntry(access)
-        return self._decrypt_for_local(access['key'], raw)
+        return self._decrypt_for_local(access["key"], raw)
 
     def set(self, access, manifest):
-        ciphered = self._encrypt_for_local(access['key'], manifest)
+        ciphered = self._encrypt_for_local(access["key"], manifest)
         file = self._path / access["id"]
         file.write_bytes(ciphered)
 

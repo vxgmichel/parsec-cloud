@@ -302,19 +302,22 @@ class EncryptionManager(BaseAsyncComponent):
                     "Cannot retreive user `%s`: %r (errors: %r)" % (user_id, raw_rep, errors)
                 )
         user_data = {
-            'user_id': rep['user_id'],
-            'broadcast_key': to_jsonb64(rep['broadcast_key']),
-            'devices': {k: to_jsonb64(v['verify_key']) for k, v in rep['devices'].items()}
+            "user_id": rep["user_id"],
+            "broadcast_key": to_jsonb64(rep["broadcast_key"]),
+            "devices": {k: to_jsonb64(v["verify_key"]) for k, v in rep["devices"].items()},
         }
         self._local_db.set(self._build_remote_user_local_access(user_id), user_data)
 
     def _build_remote_user_local_access(self, user_id):
-        return {'id': hashlib.sha256(user_id.encode('utf-8')).digest(), 'key': self.device.local_symkey}
+        return {
+            "id": hashlib.sha256(user_id.encode("utf-8")).digest(),
+            "key": self.device.local_symkey,
+        }
 
     def _fetch_remote_user_from_local(self, user_id):
         try:
             user_data = self._local_db.get(self._build_remote_user_local_access(user_id))
-            return RemoteUser(user_id, from_jsonb64(user_data['broadcast_key']))
+            return RemoteUser(user_id, from_jsonb64(user_data["broadcast_key"]))
 
         except LocalDBMissingEntry as exc:
             return None
@@ -323,12 +326,12 @@ class EncryptionManager(BaseAsyncComponent):
         try:
             user_data = self._local_db.get(self._build_remote_user_local_access(user_id))
             try:
-                device_b64_pubkey = user_data['devices'][device_name]
+                device_b64_pubkey = user_data["devices"][device_name]
             except KeyError:
                 return None
             return RemoteDevice(user_id, device_name, from_jsonb64(device_b64_pubkey))
-            user_data['devices'] = {k: from_jsonb64(v) for k, v in user_data['devices'].items()}
-            return RemoteUser(user_id, from_jsonb64(user_data['broadcast_key']))
+            user_data["devices"] = {k: from_jsonb64(v) for k, v in user_data["devices"].items()}
+            return RemoteUser(user_id, from_jsonb64(user_data["broadcast_key"]))
 
         except LocalDBMissingEntry as exc:
             return None

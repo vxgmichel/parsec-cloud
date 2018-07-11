@@ -101,9 +101,7 @@ class Core(BaseAsyncComponent):
             )
             self.backend_cmds_sender = BackendCmdsSender(device, self.config.backend_addr)
             # self.local_storage = LocalStorage(device.local_storage_db_path)
-            self.encryption_manager = EncryptionManager(
-                device, self.backend_cmds_sender
-            )
+            self.encryption_manager = EncryptionManager(device, self.backend_cmds_sender)
             # self.backend_storage = BackendStorage(self.backend_cmds_sender)
             # self.manifests_manager = ManifestsManager(
             #     self.local_storage, self.backend_storage, self.encryption_manager

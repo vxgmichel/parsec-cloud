@@ -99,12 +99,7 @@ class Syncer:
         return ret
 
     async def _backend_vlob_read(self, id, rts, version=None):
-        payload = {
-            "cmd": "vlob_read",
-            "id": id,
-            "rts": rts,
-            "version": version,
-        }
+        payload = {"cmd": "vlob_read", "id": id, "rts": rts, "version": version}
         ret = await self._backend_conn.send(payload)
         assert ret["status"] == "ok"
         return ret

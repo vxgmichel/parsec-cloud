@@ -47,7 +47,7 @@ class cmd_CREATE_Schema(BaseCmdSchema):
 
 class cmd_READ_Schema(BaseCmdSchema):
     id = fields.String(required=True)
-    version = fields.Integer(validate=lambda n: n >= 1)
+    version = fields.Integer(validate=lambda n: n >= 1, allow_none=True)
     rts = fields.String(required=True)
 
 

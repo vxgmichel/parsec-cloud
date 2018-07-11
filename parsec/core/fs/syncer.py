@@ -2,10 +2,12 @@ import trio
 
 from parsec.core.fs.data import is_folder_manifest
 from parsec.core.fs.local_folder_fs import FSManifestLocalMiss
+from parsec.core.fs.sync_base import SyncConcurrencyError
 from parsec.core.fs.folder_syncer import FolderSyncerMixin
 from parsec.core.fs.file_syncer import FileSyncerMixin
 from parsec.core.local_db import LocalDBMissingEntry
-from parsec.utils import to_jsonb64
+from parsec.core.schemas import dumps_manifest, loads_manifest
+from parsec.utils import to_jsonb64, from_jsonb64
 
 
 class Syncer(FolderSyncerMixin, FileSyncerMixin):
@@ -96,7 +98,6 @@ class Syncer(FolderSyncerMixin, FileSyncerMixin):
         payload = {"cmd": "blockstore_post", "id": access["id"], "block": to_jsonb64(blob)}
         ret = await self.backend_cmds_sender.send(payload)
         assert ret["status"] == "ok"
-        return ret
 
     async def _backend_vlob_group_check(self, to_check):
         payload = {"cmd": "vlob_group_check", "to_check": to_check}
@@ -104,34 +105,42 @@ class Syncer(FolderSyncerMixin, FileSyncerMixin):
         assert ret["status"] == "ok"
         return ret
 
-    async def _backend_vlob_read(self, id, rts, version=None):
-        payload = {"cmd": "vlob_read", "id": id, "rts": rts, "version": version}
+    async def _backend_vlob_read(self, access, version=None):
+        payload = {"cmd": "vlob_read", "id": access["id"], "rts": access["rts"], "version": version}
         ret = await self.backend_cmds_sender.send(payload)
         assert ret["status"] == "ok"
-        return ret
+        ciphered = from_jsonb64(ret["blob"])
+        raw = await self.encryption_manager.decrypt_with_secret_key(access["key"], ciphered)
+        return loads_manifest(raw)
 
-    async def _backend_vlob_create(self, id, rts, wts, blob, notify_beacons):
+    async def _backend_vlob_create(self, access, manifest, notify_beacons):
+        ciphered = self.encryption_manager.encrypt_with_secret_key(
+            access["key"], dumps_manifest(manifest)
+        )
         payload = {
             "cmd": "vlob_create",
-            "id": id,
-            "wts": wts,
-            "rts": rts,
-            "blob": to_jsonb64(blob),
+            "id": access["id"],
+            "wts": access["wts"],
+            "rts": access["rts"],
+            "blob": to_jsonb64(ciphered),
             "notify_beacons": notify_beacons,
         }
         ret = await self.backend_cmds_sender.send(payload)
         assert ret["status"] == "ok"
-        return ret
 
-    async def _backend_vlob_update(self, id, wts, version, blob, notify_beacons):
+    async def _backend_vlob_update(self, access, manifest, notify_beacons):
+        ciphered = self.encryption_manager.encrypt_with_secret_key(
+            access["key"], dumps_manifest(manifest)
+        )
         payload = {
             "cmd": "vlob_update",
-            "id": id,
-            "wts": wts,
-            "version": version,
-            "blob": to_jsonb64(blob),
+            "id": access["id"],
+            "wts": access["wts"],
+            "version": manifest["version"],
+            "blob": to_jsonb64(ciphered),
             "notify_beacons": notify_beacons,
         }
         ret = await self.backend_cmds_sender.send(payload)
+        if ret["status"] == "version_error":
+            raise SyncConcurrencyError(access)
         assert ret["status"] == "ok"
-        return ret

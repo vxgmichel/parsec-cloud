@@ -31,20 +31,13 @@ class FileSyncerMixin:
             "author": self.device.id,
         }
 
-        ciphered = self.encryption_manager.encrypt_with_secret_key(
-            access["key"], dumps_manifest(remote_manifest)
-        )
         if manifest["is_placeholder"]:
             print("sync file placeholder sync", access["id"])
-            await self._backend_vlob_create(
-                access["id"], access["rts"], access["wts"], ciphered, notify_beacons
-            )
+            await self._backend_vlob_create(access, remote_manifest, notify_beacons)
             print("sync file placeholder sync done", access["id"])
         else:
             print("sync file update sync", access["id"])
-            await self._backend_vlob_update(
-                access["id"], access["wts"], remote_manifest["version"], ciphered, notify_beacons
-            )
+            await self._backend_vlob_update(access, remote_manifest, notify_beacons)
             print("sync file update sync done", access["id"])
 
         # Fuck the merge...

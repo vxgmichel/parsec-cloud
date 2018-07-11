@@ -107,7 +107,7 @@ class Core(BaseAsyncComponent):
             #     self.local_storage, self.backend_storage, self.encryption_manager
             # )
             # self.blocks_manager = BlocksManager(self.local_storage, self.backend_storage)
-            self.fs = FS(device, self.backend_cmds_sender, self.signal_ns)
+            self.fs = FS(device, self.backend_cmds_sender, self.encryption_manager, self.signal_ns)
             # self.fuse_manager = FuseManager(self.config.addr, self.signal_ns)
             # self.synchronizer = Synchronizer(self.config.auto_sync, self.fs)
             # self.remote_listener = RemoteListener(

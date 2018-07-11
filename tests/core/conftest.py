@@ -13,7 +13,7 @@ def signal_ns_factory():
 
 @pytest.fixture
 def encryption_manager_factory(nursery, alice, backend_cmds_sender_factory):
-    async def _encryption_manager_factory(device, backend_addr=None, signal_ns=None):
+    async def _encryption_manager_factory(device, backend_addr=None):
         bcs = await backend_cmds_sender_factory(alice, backend_addr=backend_addr)
         em = EncryptionManager(alice, bcs)
         await em.init(nursery)
@@ -40,12 +40,13 @@ def backend_cmds_sender_factory(nursery, running_backend):
 
 
 @pytest.fixture
-def fs_factory(nursery, backend_cmds_sender_factory, signal_ns_factory):
+def fs_factory(nursery, backend_cmds_sender_factory, encryption_manager_factory, signal_ns_factory):
     async def _fs_factory(device, backend_addr=None, signal_ns=None):
         if not signal_ns:
             signal_ns = signal_ns_factory()
+        encryption_manager = await encryption_manager_factory(device, backend_addr=backend_addr)
         backend_cmds_sender = await backend_cmds_sender_factory(device, backend_addr=backend_addr)
-        fs = FS(device, backend_cmds_sender, signal_ns)
+        fs = FS(device, backend_cmds_sender, encryption_manager, signal_ns)
         await fs.init(nursery)
         return fs
 

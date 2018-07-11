@@ -14,15 +14,17 @@ from parsec.core.fs.remote_loader import RemoteLoader
 
 
 class FS(BaseAsyncComponent):
-    def __init__(self, device, backend_conn, signal_ns):
+    def __init__(self, device, backend_cmds_sender, encryption_manager, signal_ns):
         super().__init__()
         self.signal_ns = signal_ns
         self._device = device
 
         self._local_file_fs = LocalFileFS(device, signal_ns)
         self._local_folder_fs = LocalFolderFS(device, signal_ns)
-        self._remote_loader = RemoteLoader(backend_conn, device.local_db)
-        self._syncer = Syncer(device, backend_conn, self._local_folder_fs, signal_ns)
+        self._remote_loader = RemoteLoader(backend_cmds_sender, encryption_manager, device.local_db)
+        self._syncer = Syncer(
+            device, backend_cmds_sender, encryption_manager, self._local_folder_fs, signal_ns
+        )
 
         self._beacon_monitor = BeaconMonitor(device, device.local_db, signal_ns)
         self._sync_monitor = SyncMonitor(self._local_folder_fs, self._syncer, signal_ns)

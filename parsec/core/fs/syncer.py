@@ -25,11 +25,14 @@ from parsec.utils import to_jsonb64
 
 
 class Syncer:
-    def __init__(self, device, backend_conn, local_manifest_fs, signal_ns):
+    def __init__(
+        self, device, backend_cmds_sender, encryption_manager, local_manifest_fs, signal_ns
+    ):
         self._lock = trio.Lock()
         self.device = device
-        self._backend_conn = backend_conn
-        self._local_manifest_fs = local_manifest_fs
+        self.backend_cmds_sender = backend_cmds_sender
+        self.encryption_manager = encryption_manager
+        self.local_manifest_fs = local_manifest_fs
         self.signal_ns = signal_ns
 
     def _get_group_check_local_entries(self):
@@ -37,11 +40,11 @@ class Syncer:
 
         def _recursive_get_local_entries_ids(access):
             try:
-                manifest = self._local_manifest_fs.get_manifest(access)
+                manifest = self.local_manifest_fs.get_manifest(access)
             except LocalDBMissingEntry:
                 # TODO: make the assert true...
                 # # Root should always be loaded
-                # assert access is not self._local_manifest_fs.root_access
+                # assert access is not self.local_manifest_fs.root_access
                 return
 
             if is_folder_manifest(manifest):
@@ -53,7 +56,7 @@ class Syncer:
                 {"id": access["id"], "rts": access["rts"], "version": manifest["base_version"]}
             )
 
-        _recursive_get_local_entries_ids(self._local_manifest_fs.root_access)
+        _recursive_get_local_entries_ids(self.local_manifest_fs.root_access)
         return entries
 
     async def full_sync(self):
@@ -72,8 +75,8 @@ class Syncer:
 
     async def sync_by_id(self, entry_id):
         try:
-            path, access, _ = self._local_manifest_fs.get_entry_path(entry_id)
-            notify = self._local_manifest_fs.get_beacons(path)
+            path, access, _ = self.local_manifest_fs.get_entry_path(entry_id)
+            notify = self.local_manifest_fs.get_beacons(path)
         except FSManifestLocalMiss:
             # Entry not locally present, nothing to do
             return
@@ -88,19 +91,19 @@ class Syncer:
 
     async def _backend_block_post(self, access, blob):
         payload = {"cmd": "blockstore_post", "id": access["id"], "block": to_jsonb64(blob)}
-        ret = await self._backend_conn.send(payload)
+        ret = await self.backend_cmds_sender.send(payload)
         assert ret["status"] == "ok"
         return ret
 
     async def _backend_vlob_group_check(self, to_check):
         payload = {"cmd": "vlob_group_check", "to_check": to_check}
-        ret = await self._backend_conn.send(payload)
+        ret = await self.backend_cmds_sender.send(payload)
         assert ret["status"] == "ok"
         return ret
 
     async def _backend_vlob_read(self, id, rts, version=None):
         payload = {"cmd": "vlob_read", "id": id, "rts": rts, "version": version}
-        ret = await self._backend_conn.send(payload)
+        ret = await self.backend_cmds_sender.send(payload)
         assert ret["status"] == "ok"
         return ret
 
@@ -113,7 +116,7 @@ class Syncer:
             "blob": to_jsonb64(blob),
             "notify_beacons": notify_beacons,
         }
-        ret = await self._backend_conn.send(payload)
+        ret = await self.backend_cmds_sender.send(payload)
         assert ret["status"] == "ok"
         return ret
 
@@ -126,14 +129,14 @@ class Syncer:
             "blob": to_jsonb64(blob),
             "notify_beacons": notify_beacons,
         }
-        ret = await self._backend_conn.send(payload)
+        ret = await self.backend_cmds_sender.send(payload)
         assert ret["status"] == "ok"
         return ret
 
     async def _sync_nolock(self, path, access, recursive, notify):
         print("sync nolock", access)
         try:
-            manifest = self._local_manifest_fs.get_manifest(access)
+            manifest = self.local_manifest_fs.get_manifest(access)
         except LocalDBMissingEntry:
             # Nothing to do if entry is no present locally
             return
@@ -141,14 +144,14 @@ class Syncer:
         # Do complex stuff here...
         if is_file_manifest(manifest):
             if not manifest["need_sync"]:
-                self._local_manifest_fs.mark_outdated_manifest(access)
+                self.local_manifest_fs.mark_outdated_manifest(access)
                 self.signal_ns.signal("fs.entry.synced").send(None, path=path, id=access["id"])
                 print("sync file oudating entry", access["id"])
                 return
 
             print("sync file uploading blocks", access["id"])
             for db_access in manifest["dirty_blocks"]:
-                db = self._local_manifest_fs.get_manifest(db_access)
+                db = self.local_manifest_fs.get_manifest(db_access)
                 await self._backend_block_post(db_access, db)
             manifest["blocks"] += manifest["dirty_blocks"]
             print("sync file blocks uploaded", access["id"])
@@ -181,7 +184,7 @@ class Syncer:
 
             # Fuck the merge...
             updated_manifest = remote_to_local_manifest(remote_manifest)
-            self._local_manifest_fs.set_manifest(access, updated_manifest)
+            self.local_manifest_fs.set_manifest(access, updated_manifest)
 
         else:
             if recursive:
@@ -204,7 +207,7 @@ class Syncer:
 
             if not manifest["need_sync"]:
                 # TODO: User manifest should always be loaded
-                self._local_manifest_fs.mark_outdated_manifest(access)
+                self.local_manifest_fs.mark_outdated_manifest(access)
                 self.signal_ns.signal("fs.entry.synced").send(None, path=path, id=access["id"])
                 print("sync folder, oudating marked", access["id"])
                 return
@@ -230,7 +233,7 @@ class Syncer:
 
             # Fuck the merge...
             updated_manifest = remote_to_local_manifest(remote_manifest)
-            self._local_manifest_fs.set_manifest(access, updated_manifest)
+            self.local_manifest_fs.set_manifest(access, updated_manifest)
 
         print(" ********************** send signal to ", id(self.signal_ns))
         self.signal_ns.signal("fs.entry.synced").send(None, path=path, id=access["id"])

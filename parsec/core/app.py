@@ -6,7 +6,7 @@ import logbook
 from parsec.signals import Namespace as SignalNamespace
 from parsec.networking import serve_client
 from parsec.core.base import BaseAsyncComponent, NotInitializedError
-from parsec.core.fs import FS
+from parsec.core.fs import FSManager
 from parsec.core.devices_manager import DevicesManager
 from parsec.core.encryption_manager import EncryptionManager
 from parsec.core.backend_cmds_sender import BackendCmdsSender
@@ -88,7 +88,13 @@ class Core(BaseAsyncComponent):
             )
             self.backend_cmds_sender = BackendCmdsSender(device, self.config.backend_addr)
             self.encryption_manager = EncryptionManager(device, self.backend_cmds_sender)
-            self.fs = FS(device, self.backend_cmds_sender, self.encryption_manager, self.signal_ns)
+            self.fs = FSManager(
+                device,
+                self.backend_cmds_sender,
+                self.encryption_manager,
+                self.signal_ns,
+                auto_sync=self.config.auto_sync,
+            )
             # self.fuse_manager = FuseManager(self.config.addr, self.signal_ns)
             # self.sharing = Sharing(
             #     device, self.fs, self.backend_cmds_sender, self.backend_events_manager

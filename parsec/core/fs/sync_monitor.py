@@ -23,6 +23,14 @@ class SyncMonitor(BaseAsyncComponent):
         self._updated_entries = {}
         self._new_event = trio.Event()
         self.signal_ns = signal_ns
+        self._not_syncing_event = trio.Event()
+        self._not_syncing_event.set()
+
+    def is_syncing(self):
+        return self._not_syncing_event.is_set()
+
+    async def wait_not_syncing(self):
+        await self._not_syncing_event.wait()
 
     async def _init(self, nursery):
         self._task_cancel_scope = await nursery.start(self._task)
@@ -49,7 +57,11 @@ class SyncMonitor(BaseAsyncComponent):
             while True:
                 try:
                     with trio.open_cancel_scope() as event_listener_scope:
-                        await self._syncer.full_sync()
+                        self._not_syncing_event.clear()
+                        try:
+                            await self._syncer.full_sync()
+                        finally:
+                            self._not_syncing_event.set()
                         await self._listen_sync_loop()
 
                 except BackendNotAvailable:
@@ -91,13 +103,21 @@ class SyncMonitor(BaseAsyncComponent):
 
         for id, (first_updated, last_updated) in updated_entries.items():
             if now - first_updated > MAX_WAIT:
-                await self._syncer.sync_by_id(id)
+                self._not_syncing_event.clear()
+                try:
+                    await self._syncer.sync_by_id(id)
+                finally:
+                    self._not_syncing_event.set()
                 break
 
         else:
             for id, (_, last_updated) in updated_entries.items():
                 if now - last_updated > MIN_WAIT:
-                    await self._syncer.sync_by_id(id)
+                    self._not_syncing_event.clear()
+                    try:
+                        await self._syncer.sync_by_id(id)
+                    finally:
+                        self._not_syncing_event.set()
                     break
 
             else:

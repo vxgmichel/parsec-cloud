@@ -1,3 +1,4 @@
+import os
 import re
 import attr
 from functools import wraps
@@ -79,7 +80,6 @@ class FileOracle:
 @attr.s
 class OracleFSFile:
     need_sync = attr.ib(default=True)
-    need_flush = attr.ib(default=False)
     base_version = attr.ib(default=0)
 
     @property
@@ -90,7 +90,6 @@ class OracleFSFile:
 @attr.s(repr=False)
 class OracleFSFolder(dict):
     need_sync = attr.ib(default=True)
-    need_flush = attr.ib(default=False)
     base_version = attr.ib(default=0)
 
     def __repr__(self):
@@ -98,7 +97,6 @@ class OracleFSFolder(dict):
         return (
             "{type}("
             "need_sync={self.need_sync}, "
-            "need_flush={self.need_flush}, "
             "base_version={self.base_version}, "
             "children={children})"
         ).format(type=type(self).__name__, self=self, children=children)
@@ -108,20 +106,13 @@ class OracleFSFolder(dict):
         return self.base_version == 0
 
 
-@attr.s(repr=False)
-class OracleFSRootFolder(OracleFSFolder):
-    @property
-    def is_placeholder(self):
-        return False
-
-
 def normalize_path(path):
     return "/" + "/".join([x for x in path.split("/") if x])
 
 
 @attr.s
 class OracleFS:
-    root = attr.ib(factory=OracleFSRootFolder)
+    root = attr.ib(factory=OracleFSFolder)
 
     def create_file(self, path):
         path = normalize_path(path)
@@ -170,8 +161,8 @@ class OracleFS:
         src = normalize_path(src)
         dst = normalize_path(dst)
 
-        if src == dst:
-            return "ok"
+        # if src == dst:
+        #     return "ok"
 
         if src == "/" or dst == "/":
             return "invalid_path"
@@ -230,7 +221,6 @@ class OracleFS:
     def flush(self, path):
         entry = self.get_path(path)
         if entry is not None:
-            entry.need_flush = False
             return "ok"
         return "invalid_path"
 
@@ -246,7 +236,6 @@ class OracleFS:
         if isinstance(entry, OracleFSFolder):
             for child_entry in entry.values():
                 if child_entry.need_sync:
-                    child_entry.need_flush = False
                     child_entry.need_sync = False
                     child_entry.base_version += 1
                 self._recursive_children_sync(child_entry)
@@ -259,10 +248,8 @@ class OracleFS:
             entry_was_placeholder = entry.is_placeholder
             if child_asked_for_sync:
                 entry.base_version += 1
-                entry.need_flush = False
                 entry.need_sync = entry.keys() != {child_asked_for_sync}
             elif entry.need_sync:
-                entry.need_flush = False
                 entry.need_sync = False
                 entry.base_version += 1
             else:
@@ -281,7 +268,6 @@ class OracleFS:
                 "status": "ok",
                 "base_version": entry.base_version,
                 "is_placeholder": entry.is_placeholder,
-                "need_flush": entry.need_flush,
                 "need_sync": entry.need_sync,
             }
         else:
@@ -300,13 +286,18 @@ async def test_reproduce(alice_core_sock, alice2_core2_sock):
     def teardown(self):
         super().teardown()
         if hasattr(self, "_failure_reproducer_code"):
-            print("============================ REPRODUCE CODE ========================")
-            print(
-                self._failure_reproducer_template.format(
-                    body="\n".join(self._failure_reproducer_code).strip()
-                )
+            reproduce_code = self._failure_reproducer_template.format(
+                body="\n".join(self._failure_reproducer_code).strip()
             )
-            print("====================================================================")
+            reproduce_file = os.environ.get("REPRODUCE_FILE")
+            if reproduce_file:
+                with open(reproduce_file, "w") as fd:
+                    fd.write(reproduce_code)
+                print(f"========>>> Reproduce code available at {reproduce_file} <<<=======")
+            else:
+                print("============================ REPRODUCE CODE ========================")
+                print(reproduce_code)
+                print("====================================================================")
 
     def print_step(self, step):
         super().print_step(step)

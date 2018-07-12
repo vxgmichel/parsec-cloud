@@ -3,17 +3,13 @@ import inspect
 from parsec.core.base import BaseAsyncComponent
 from parsec.core.fs.beacon_monitor import BeaconMonitor
 from parsec.core.fs.sync_monitor import SyncMonitor
-from parsec.core.fs.local_folder_fs import (
-    FSInvalidPath,  # noqa, republishing
-    FSManifestLocalMiss,
-    LocalFolderFS,
-)
+from parsec.core.fs.local_folder_fs import FSManifestLocalMiss, LocalFolderFS
 from parsec.core.fs.local_file_fs import LocalFileFS, FSBlocksLocalMiss
 from parsec.core.fs.syncer import Syncer
 from parsec.core.fs.remote_loader import RemoteLoader
 
 
-class FS(BaseAsyncComponent):
+class FS:
     def __init__(self, device, backend_cmds_sender, encryption_manager, signal_ns):
         super().__init__()
         self.signal_ns = signal_ns
@@ -122,3 +118,27 @@ class FS(BaseAsyncComponent):
 
     async def sync(self, path, recursive=True):
         await self._load_and_retry(self._syncer.sync, path, recursive=recursive)
+
+
+class FSManager(FS, BaseAsyncComponent):
+    def __init__(self, device, backend_cmds_sender, encryption_manager, signal_ns, auto_sync=True):
+        super().__init__(device, backend_cmds_sender, encryption_manager, signal_ns)
+        self._beacon_monitor = BeaconMonitor(device, self._local_folder_fs, signal_ns)
+        self._sync_monitor = SyncMonitor(self._local_folder_fs, self._syncer, signal_ns)
+        self.auto_sync = auto_sync
+
+    async def _init(self, nursery):
+        await self._beacon_monitor.init(nursery)
+        if self.auto_sync:
+            await self._sync_monitor.init(nursery)
+
+    async def _teardown(self):
+        if self.auto_sync:
+            await self._sync_monitor.teardown()
+        await self._beacon_monitor.teardown()
+
+    async def is_syncing(self):
+        return await self._sync_monitor.is_syncing()
+
+    async def wait_not_syncing(self):
+        await self._sync_monitor.wait_not_syncing()

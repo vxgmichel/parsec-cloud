@@ -23,6 +23,7 @@ st_entry_name = st.text(alphabet=ascii_lowercase, min_size=1, max_size=3)
 class OracleFSWithSync:
     def __init__(self):
         self.core_fs = OracleFS()
+        self.core_fs.sync("/")
         self.synced_fs = OracleFS()
         self.synced_fs.sync("/")
 
@@ -52,8 +53,8 @@ class OracleFSWithSync:
 
     def reset_core(self):
         self.core_fs = deepcopy(self.synced_fs)
-        # Mimic what is done in CoreOnlineRWFile.reset_core_done
-        self.core_fs.sync("/")
+        # # Mimic what is done in CoreOnlineRWFile.reset_core_done
+        # self.core_fs.sync("/")
 
     def _sync_oracles(self, path):
         path = normalize_path(path)
@@ -135,7 +136,7 @@ async def test_reproduce(running_backend, alice, core_factory, core_sock_factory
 
     while not done:
         try:
-            core = await core_factory()
+            core = await core_factory(config={"auto_sync": False})
             try:
                 await core.login(alice)
                 if need_reset_sync:
@@ -176,7 +177,7 @@ def rule_selector():
 
             async def run_core(on_ready):
                 async with core_factory_cm(
-                    devices=[device], config={"backend_addr": server.addr}
+                    devices=[device], config={"backend_addr": server.addr, "auto_sync": False}
                 ) as core:
                     await core.login(device)
                     sock = core_sock_factory(core, nursery=core.nursery)
@@ -189,6 +190,7 @@ def rule_selector():
                             await sock.send(msg)
                             rep = await sock.recv()
                             await self.communicator.trio_respond(rep)
+
                         elif msg == "restart_core!":
                             raise RestartCore()
 
@@ -199,12 +201,12 @@ def rule_selector():
                 task_status.started()
 
             async def reset_core_done(core):
-                # Core won't try to fetch the user manifest from backend when
-                # starting (given a modified version can be present on disk,
-                # or we could be offline).
-                # If we reset local storage however, we want to force the core
-                # to load the data from the backend.
-                await core.fs.sync("/")
+                # # Core won't try to fetch the user manifest from backend when
+                # # starting (given a modified version can be present on disk,
+                # # or we could be offline).
+                # # If we reset local storage however, we want to force the core
+                # # to load the data from the backend.
+                # await core.fs.sync("/")
                 await self.communicator.trio_respond(True)
 
             async def restart_core_done(core):
@@ -279,7 +281,6 @@ async def afunc(sock, oracle_fs):
     if expected["status"] == "ok":
         assert rep["base_version"] == expected["base_version"]
         assert rep["is_placeholder"] == expected["is_placeholder"]
-        assert rep["need_flush"] == expected["need_flush"]
         assert rep["need_sync"] == expected["need_sync"]
 yield afunc
 """
@@ -292,7 +293,6 @@ yield afunc
             if expected["status"] == "ok":
                 assert rep["base_version"] == expected["base_version"]
                 assert rep["is_placeholder"] == expected["is_placeholder"]
-                assert rep["need_flush"] == expected["need_flush"]
                 assert rep["need_sync"] == expected["need_sync"]
 
         @rule(path=st.one_of(Files, Folders))
@@ -319,7 +319,7 @@ async def afunc(sock, oracle_fs):
     dst = os.path.join({dst_parent}, {dst_name})
     await sock.send({{"cmd": "move", "src": {src}, "dst": dst}})
     rep = await sock.recv()
-    expected_status = oracle_fs.move(src, dst)
+    expected_status = oracle_fs.move({src}, dst)
     assert rep["status"] == expected_status
 yield afunc
 """

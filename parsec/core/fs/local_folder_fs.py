@@ -21,10 +21,6 @@ def normalize_path(path):
     return normalized
 
 
-class FSInvalidPath(Exception):
-    pass
-
-
 class FSManifestLocalMiss(Exception):
     def __init__(self, access):
         super().__init__(access)
@@ -38,42 +34,45 @@ class LocalFolderFS:
         self._local_db = device.local_db
         self.signal_ns = signal_ns
 
-        # TODO: useful ?
-        # # Sanity check
-        # try:
-        #     self._local_db.get(self.root_access)
-        # except LocalDBMissingEntry as exc:
-        #     raise RuntimeError("Device %s is not initialized" % device) from exc
-
-    def init(self):
-        # Retrieve root beacon
+    def get_local_beacons(self):
+        # Only user manifest and workspace manifests have a beacon id
+        beacons = []
         try:
             root_manifest = self.get_manifest(self.root_access)
-            self.signal_ns.signal("fs.workspace.loaded").send(
-                None, path="/", id=self.root_access, beacon_id=root_manifest["beacon_id"]
-            )
-        except LocalDBMissingEntry as exc:
+            beacons.append(root_manifest["beacon_id"])
+            # Currently workspace can only direct children of the user manifest
+            for child_access in root_manifest["children"].values():
+                try:
+                    child_manifest = self.get_manifest(child_access)
+                except FSManifestLocalMiss as exc:
+                    continue
+                if "beacon_id" in child_manifest:
+                    beacons.append(child_manifest["beacon_id"])
+        except FSManifestLocalMiss as exc:
             pass
+        return beacons
 
     def dump(self):
         def _recursive_dump(access):
             dump_data = {"access": access}
             try:
                 manifest = self.get_manifest(access)
-                dump_data.update(manifest)
-                if is_folder_manifest(manifest):
-                    for child_name, child_access in manifest["children"].items():
-                        dump_data["children"][child_name] = _recursive_dump(child_access)
-
-            except LocalDBMissingEntry as exc:
-                pass
+            except FSManifestLocalMiss:
+                return dump_data
+            dump_data.update(manifest)
+            if is_folder_manifest(manifest):
+                for child_name, child_access in manifest["children"].items():
+                    dump_data["children"][child_name] = _recursive_dump(child_access)
 
             return dump_data
 
         return _recursive_dump(self.root_access)
 
     def get_manifest(self, access):
-        raw = self._local_db.get(access)
+        try:
+            raw = self._local_db.get(access)
+        except LocalDBMissingEntry as exc:
+            raise FSManifestLocalMiss(access) from exc
         return loads_manifest(raw)
 
     def set_manifest(self, access, manifest):
@@ -94,6 +93,9 @@ class LocalFolderFS:
 
         self._retrieve_entry(path, collector=_beacons_collector)
         return beacons
+
+    def get_entry(self, path):
+        return self._retrieve_entry(path)
 
     def get_entry_path(self, entry_id):
         if entry_id == self.root_access["id"]:
@@ -121,10 +123,7 @@ class LocalFolderFS:
         assert path.startswith("/")
 
         def _retrieve_entry_recursive(curr_access, curr_path, hops):
-            try:
-                curr_manifest = self.get_manifest(curr_access)
-            except LocalDBMissingEntry as exc:
-                raise FSManifestLocalMiss(curr_access) from exc
+            curr_manifest = self.get_manifest(curr_access)
 
             if not hops:
                 if collector:
@@ -259,6 +258,7 @@ class LocalFolderFS:
         elif expect == "folder":
             raise NotADirectoryError(20, "Not a directory", path)
 
+        mark_manifest_modified(parent_manifest)
         self.set_manifest(parent_access, parent_manifest)
         self.signal_ns.signal("fs.entry.modified").send("local", id=parent_access["id"])
 

@@ -5,8 +5,8 @@ from hypothesis.stateful import RuleBasedStateMachine, initialize, rule, run_sta
 from hypothesis import strategies as st
 
 from parsec.core.fs.local_file_fs import FSInvalidFileDescriptor, FSBlocksLocalMiss
+from parsec.core.fs.local_folder_fs import FSManifestLocalMiss
 from parsec.core.fs.data import new_block_access, new_access, new_local_file_manifest
-from parsec.core.local_db import LocalDBMissingEntry
 
 from tests.common import freeze_time
 
@@ -36,7 +36,7 @@ def foo_txt(alice, local_folder_fs):
 
 def test_open_unknown_file(local_file_fs):
     dummy_access = new_access()
-    with pytest.raises(LocalDBMissingEntry):
+    with pytest.raises(FSManifestLocalMiss):
         local_file_fs.open(dummy_access)
 
 

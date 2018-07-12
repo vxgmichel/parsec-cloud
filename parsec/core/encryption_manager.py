@@ -282,7 +282,7 @@ class EncryptionManager(BaseAsyncComponent):
 
     def _build_remote_user_local_access(self, user_id):
         return {
-            "id": hashlib.sha256(user_id.encode("utf-8")).digest(),
+            "id": hashlib.sha256(user_id.encode("utf-8")).hexdigest(),
             "key": self.device.local_symkey,
         }
 

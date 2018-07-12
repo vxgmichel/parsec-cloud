@@ -1,6 +1,4 @@
 import os
-import pendulum
-from itertools import count
 
 from parsec.core.fs.data import (
     is_folder_manifest,
@@ -10,27 +8,7 @@ from parsec.core.fs.data import (
 )
 from parsec.core.fs.sync_base import SyncConcurrencyError
 from parsec.core.fs.merge_folders import merge_local_folder_manifests, merge_remote_folder_manifests
-from parsec.core.local_db import LocalDBMissingEntry
-
-
-def find_conflicting_name_for_child_entry(parent_manifest, original_name):
-    try:
-        base_name, extension = original_name.rsplit(".")
-    except ValueError:
-        extension = None
-        base_name = original_name
-
-    now = pendulum.now()
-    for tentative in count():
-        tentative_str = "" if not tentative else " n°%s" % (tentative + 1)
-        # TODO: Also add device id in the naming ?
-        diverged_name = "%s (conflict%s %s)" % (base_name, tentative_str, now.to_datetime_string())
-        if extension:
-            diverged_name += ".%s" % extension
-
-        if diverged_name not in parent_manifest["children"]:
-            return diverged_name
-            break
+from parsec.core.fs.local_folder_fs import FSManifestLocalMiss
 
 
 class FolderSyncerMixin:
@@ -71,7 +49,7 @@ class FolderSyncerMixin:
         to_sync_manifest = local_to_remote_manifest(manifest)
         to_sync_manifest["version"] += 1
 
-        # Upload the file manifest as new vlob version
+        # Upload the folder manifest as new vlob version
         while True:
             try:
                 if is_placeholder_manifest(manifest):
@@ -82,7 +60,7 @@ class FolderSyncerMixin:
 
             except SyncConcurrencyError:
                 # Placeholder don't have remote version, so no concurrency is possible
-                assert not is_placeholder_manifest(to_sync_manifest)
+                assert not is_placeholder_manifest(manifest)
                 # Do a 3-ways merge to fix the concurrency error, first we must
                 # fetch the base version and the new one present in the backend
                 # TODO: base should be available locally
@@ -130,7 +108,7 @@ class FolderSyncerMixin:
         for child_name, child_access in base_manifest["children"].items():
             try:
                 child_manifest = self.local_folder_fs.get_manifest(child_access)
-            except LocalDBMissingEntry:
+            except FSManifestLocalMiss:
                 # Child not in local, no need to sync it then !
                 continue
             if not is_placeholder_manifest(child_manifest):

@@ -3,11 +3,11 @@ import pytest
 import pprint
 from string import ascii_lowercase
 from hypothesis import strategies as st, note
-from hypothesis.stateful import Bundle, invariant
+from hypothesis.stateful import Bundle, invariant, initialize
 
 from parsec.utils import to_jsonb64
 
-from tests.hypothesis.common import rule, rule_once
+from tests.hypothesis.common import rule
 
 
 # The point is not to find breaking filenames here, so keep it simple
@@ -22,6 +22,7 @@ def check_fs_dump(entry, is_root=True):
             check_fs_dump(v, is_root=False)
 
 
+@pytest.mark.xfail
 @pytest.mark.slow
 @pytest.mark.trio
 async def test_online_core_idempotent_sync(
@@ -64,14 +65,14 @@ async def test_online_core_idempotent_sync(
                 rep = await sock.recv()
                 await self.communicator.trio_respond(rep)
 
-        @rule_once(target=BadPath)
+        @initialize(target=BadPath)
         def init_bad_path(self):
             return "/dummy"
 
         @rule(
             target=GoodPath,
             path=st.sampled_from(
-                ["/", "/good_file.txt", "/good_folder", "/good_folder/good_sub_file.txt"]
+                ["/", "/good_file.txt", "/good_folder/", "/good_folder/good_sub_file.txt"]
             ),
         )
         def init_good_path(self, path):
@@ -114,7 +115,7 @@ async def test_online_core_idempotent_sync(
             note(rep)
             assert rep["status"] == "invalid_path"
 
-        @rule(src=GoodPath, dst=GoodPath)
+        @rule(src=GoodPath, dst=GoodPath.filter(lambda x: x.endswith("/")))
         def try_to_move_bad_dst(self, src, dst):
             rep = self.core_cmd({"cmd": "move", "src": src, "dst": dst})
             note(rep)

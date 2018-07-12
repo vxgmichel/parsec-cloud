@@ -159,4 +159,6 @@ def local_to_remote_manifest(manifest):
     del remote_manifest["need_sync"]
     del remote_manifest["is_placeholder"]
     remote_manifest["type"] = manifest["type"][len("local_") :]
+    if is_file_manifest(manifest):
+        del remote_manifest["dirty_blocks"]
     return remote_manifest

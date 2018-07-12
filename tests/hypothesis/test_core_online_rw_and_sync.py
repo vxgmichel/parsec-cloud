@@ -16,42 +16,41 @@ class FileOracle:
         self._buffer = bytearray()
         self._synced_buffer = bytearray()
         self.base_version = base_version
-        self.need_flush = base_version == 0
         self.need_sync = base_version == 0
 
     def read(self, size, offset):
         return self._buffer[offset : size + offset]
 
     def write(self, offset, content):
-        self._buffer[offset : len(content) + offset] = content
-        if content:
-            self.need_flush = True
-            self.need_sync = True
-
-    def truncate(self, length):
-        if length >= len(self._buffer):
+        if not content:
             return
-        self._buffer = self._buffer[:length]
-        self.need_flush = True
+
+        if offset > len(self._buffer):
+            self.truncate(offset + len(content))
+        self._buffer[offset : len(content) + offset] = content
         self.need_sync = True
 
-    def flush(self):
-        self.need_flush = False
+    def truncate(self, length):
+        if length == len(self._buffer):
+            return
+        new_buffer = bytearray(length)
+        truncate_length = min(length, len(self._buffer))
+        new_buffer[:truncate_length] = self._buffer[:truncate_length]
+        self._buffer = new_buffer
+        self.need_sync = True
 
     def sync(self):
         self._synced_buffer = self._buffer.copy()
         if self.need_sync:
             self.base_version += 1
         self.need_sync = False
-        self.need_flush = False
 
     def reset_core(self):
         self._buffer = self._synced_buffer.copy()
-        self.need_flush = False
         self.need_sync = False
 
     def restart_core(self):
-        self.need_flush = False
+        pass
 
 
 @pytest.mark.slow
@@ -60,9 +59,10 @@ async def test_core_online_rw_and_sync(
     TrioDriverRuleBasedStateMachine,
     server_factory,
     backend_factory,
-    core_factory,
+    core_factory_cm,
     core_sock_factory,
     device_factory,
+    monitor,
 ):
     class RestartCore(Exception):
         def __init__(self, reset_local_storage=False):
@@ -135,24 +135,24 @@ def rule_selector():
             server = server_factory(backend.handle_client)
 
             async def run_core(on_ready):
-                core = await core_factory(
+                async with core_factory_cm(
                     devices=[device], config={"backend_addr": server.addr, "block_size": BLOCK_SIZE}
-                )
-                await core.login(device)
-                sock = core_sock_factory(core)
+                ) as core:
+                    await core.login(device)
+                    sock = core_sock_factory(core, nursery=core.nursery)
 
-                await on_ready(core)
-                while True:
-                    target, msg = await self.communicator.trio_recv()
-                    if target == "core":
-                        await sock.send(msg)
-                        rep = await sock.recv()
-                        await self.communicator.trio_respond(rep)
-                    elif msg == "restart_core!":
-                        raise RestartCore()
+                    await on_ready(core)
+                    while True:
+                        target, msg = await self.communicator.trio_recv()
+                        if target == "core":
+                            await sock.send(msg)
+                            rep = await sock.recv()
+                            await self.communicator.trio_respond(rep)
+                        elif msg == "restart_core!":
+                            raise RestartCore()
 
-                    elif msg == "reset_core!":
-                        raise RestartCore(reset_local_storage=True)
+                        elif msg == "reset_core!":
+                            raise RestartCore(reset_local_storage=True)
 
             async def bootstrap_core(core):
                 await core.fs.file_create("/foo.txt")
@@ -206,23 +206,6 @@ yield afunc
             assert rep["status"] == "ok"
             expected_content = self.file_oracle.read(size, offset)
             assert from_jsonb64(rep["content"]) == expected_content
-
-        @rule()
-        @reproduce_rule(
-            """
-async def afunc(sock, file_oracle):
-    await sock.send({{"cmd": "flush", "path": "/foo.txt"}})
-    rep = await sock.recv()
-    assert rep["status"] == "ok"
-    file_oracle.flush()
-yield afunc
-"""
-        )
-        def flush(self):
-            rep = self.core_cmd({"cmd": "flush", "path": "/foo.txt"})
-            note(rep)
-            assert rep["status"] == "ok"
-            self.file_oracle.flush()
 
         @rule()
         @reproduce_rule(
@@ -291,7 +274,6 @@ async def afunc(sock, file_oracle):
     assert rep["status"] == "ok"
     assert rep["base_version"] == file_oracle.base_version
     assert not rep["is_placeholder"]
-    assert rep["need_flush"] == file_oracle.need_flush
     assert rep["need_sync"] == file_oracle.need_sync
 yield afunc
 """
@@ -302,7 +284,6 @@ yield afunc
             assert rep["status"] == "ok"
             assert rep["base_version"] == self.file_oracle.base_version
             assert not rep["is_placeholder"]
-            assert rep["need_flush"] == self.file_oracle.need_flush
             assert rep["need_sync"] == self.file_oracle.need_sync
 
         @rule()

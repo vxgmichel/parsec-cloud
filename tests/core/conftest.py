@@ -3,7 +3,7 @@ import pytest
 from parsec.signals import Namespace as SignalNamespace
 from parsec.core.backend_cmds_sender import BackendCmdsSender
 from parsec.core.encryption_manager import EncryptionManager
-from parsec.core.fs import FS
+from parsec.core.fs import FSManager
 
 
 @pytest.fixture
@@ -46,7 +46,7 @@ def fs_factory(nursery, backend_cmds_sender_factory, encryption_manager_factory,
             signal_ns = signal_ns_factory()
         encryption_manager = await encryption_manager_factory(device, backend_addr=backend_addr)
         backend_cmds_sender = await backend_cmds_sender_factory(device, backend_addr=backend_addr)
-        fs = FS(device, backend_cmds_sender, encryption_manager, signal_ns)
+        fs = FSManager(device, backend_cmds_sender, encryption_manager, signal_ns)
         await fs.init(nursery)
         return fs
 

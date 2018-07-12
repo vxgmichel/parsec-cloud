@@ -237,6 +237,8 @@ def device_factory():
             with freeze_time("2000-01-01"):
                 user_manifest_v1 = new_local_user_manifest(device_id)
             user_manifest_v1["base_version"] = 1
+            user_manifest_v1["is_placeholder"] = False
+            user_manifest_v1["need_sync"] = False
             user_manifest_access = new_access()
             users[user_id] = (user_privkey, user_manifest_access, user_manifest_v1)
 
@@ -428,8 +430,8 @@ def core_factory(tmpdir, nursery, signal_ns_factory, backend_addr, default_devic
         if not signal_ns:
             signal_ns = signal_ns_factory()
         core = Core(config, signal_ns=signal_ns)
-
         await core.init(nursery)
+
         for device in devices:
             core.devices_manager.register_new_device(
                 device.id,

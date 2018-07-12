@@ -13,13 +13,13 @@ class RemoteLoader:
         self.local_db = local_db
 
     async def load_block(self, access):
-        rep = await self.backend_cmds_sender.send({"cmd": "blockstore_read", "id": access["id"]})
+        rep = await self.backend_cmds_sender.send({"cmd": "blockstore_get", "id": access["id"]})
         # TODO: validate answer
         assert rep["status"] == "ok"
         ciphered = from_jsonb64(rep["block"])
         block = decrypt_with_symkey(access["key"], ciphered)
         # TODO: better exceptions
-        assert sha256(block).digest() == access["digest"]
+        assert sha256(block).hexdigest() == access["digest"]
 
         self.local_db.set(access, block)
 

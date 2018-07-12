@@ -28,6 +28,9 @@ class BeaconMonitor(BaseAsyncComponent):
         self.signal_ns = signal_ns
 
     async def _init(self, nursery):
+        for beacon_id in self.local_folder_fs.get_local_beacons():
+            self.signal_ns.signal("backend.beacon.listen").send(None, beacon_id=beacon_id)
+
         self._task_cancel_scope = await nursery.start(self._task)
 
     async def _teardown(self):

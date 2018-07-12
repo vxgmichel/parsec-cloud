@@ -41,6 +41,10 @@ async def test_online_sync(autojump_clock, running_backend, core_factory, alice,
     await alice_core.login(alice)
     await alice2_core2.login(alice2)
 
+    # FS does a full sync at startup, wait for it to finish
+    await alice_core.fs.wait_not_syncing()
+    await alice2_core2.fs.wait_not_syncing()
+
     async with wait_for_entries_synced(alice2_core2, ["/"]), wait_for_entries_synced(
         alice_core, ("/", "/foo.txt")
     ):

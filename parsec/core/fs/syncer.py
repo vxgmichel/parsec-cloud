@@ -5,9 +5,12 @@ from parsec.core.fs.local_folder_fs import FSManifestLocalMiss
 from parsec.core.fs.sync_base import SyncConcurrencyError
 from parsec.core.fs.folder_syncer import FolderSyncerMixin
 from parsec.core.fs.file_syncer import FileSyncerMixin
+from parsec.core.encryption_manager import decrypt_with_symkey, encrypt_with_symkey
 from parsec.core.local_db import LocalDBMissingEntry
 from parsec.core.schemas import dumps_manifest, loads_manifest
 from parsec.utils import to_jsonb64, from_jsonb64
+
+DEFAULT_BLOCK_SIZE = 2 ** 16  # 65Kio
 
 
 class Syncer(FolderSyncerMixin, FileSyncerMixin):
@@ -19,6 +22,7 @@ class Syncer(FolderSyncerMixin, FileSyncerMixin):
         local_folder_fs,
         local_file_fs,
         signal_ns,
+        block_size=DEFAULT_BLOCK_SIZE,
     ):
         self._lock = trio.Lock()
         self.device = device
@@ -27,6 +31,7 @@ class Syncer(FolderSyncerMixin, FileSyncerMixin):
         self.backend_cmds_sender = backend_cmds_sender
         self.encryption_manager = encryption_manager
         self.signal_ns = signal_ns
+        self.block_size = block_size
 
     def _get_group_check_local_entries(self):
         entries = []
@@ -35,7 +40,7 @@ class Syncer(FolderSyncerMixin, FileSyncerMixin):
             try:
 
                 manifest = self.local_folder_fs.get_manifest(access)
-            except LocalDBMissingEntry:
+            except FSManifestLocalMiss:
                 # TODO: make the assert true...
                 # # Root should always be loaded
                 # assert access is not self.device.user_manifest_access
@@ -64,17 +69,18 @@ class Syncer(FolderSyncerMixin, FileSyncerMixin):
             return
 
         need_sync_entries = await self._backend_vlob_group_check(local_entries)
-        for chaned_item in need_sync_entries["changed"]:
-            await self.sync_by_id(chaned_item["id"])
+        for changed_item in need_sync_entries["changed"]:
+            await self.sync_by_id(changed_item["id"])
 
     async def sync_by_id(self, entry_id):
-        try:
-            path, access, _ = self.local_folder_fs.get_entry_path(entry_id)
+        async with self._lock:
+            try:
+                path, access, _ = self.local_folder_fs.get_entry_path(entry_id)
+            except FSManifestLocalMiss:
+                # Entry not locally present, nothing to do
+                return
             notify_beacons = self.local_folder_fs.get_beacons(path)
-        except FSManifestLocalMiss:
-            # Entry not locally present, nothing to do
-            return
-        await self.sync(path, access, recursive=False, notify_beacons=notify_beacons)
+            await self._sync_nolock(path, access, recursive=False, notify_beacons=notify_beacons)
 
     async def sync(self, path, recursive=True):
         # Only allow a single synchronizing operation at a time to simplify
@@ -88,7 +94,6 @@ class Syncer(FolderSyncerMixin, FileSyncerMixin):
                 # Nothing to do if entry is no present locally
                 return
             notify_beacons = self.local_folder_fs.get_beacons(sync_path)
-
             await self._sync_nolock(sync_path, sync_access, sync_recursive, notify_beacons)
 
     async def _sync_nolock(self, path, access, recursive, notify_beacons):
@@ -103,9 +108,18 @@ class Syncer(FolderSyncerMixin, FileSyncerMixin):
             await self._sync_file_nolock(path, access, manifest, notify_beacons)
 
     async def _backend_block_post(self, access, blob):
-        payload = {"cmd": "blockstore_post", "id": access["id"], "block": to_jsonb64(blob)}
+        ciphered = encrypt_with_symkey(access["key"], bytes(blob))
+        payload = {"cmd": "blockstore_post", "id": access["id"], "block": to_jsonb64(ciphered)}
         ret = await self.backend_cmds_sender.send(payload)
         assert ret["status"] == "ok"
+
+    async def _backend_block_get(self, access):
+        payload = {"cmd": "blockstore_get", "id": access["id"]}
+        ret = await self.backend_cmds_sender.send(payload)
+        assert ret["status"] == "ok"
+        ciphered = from_jsonb64(ret["block"])
+        blob = decrypt_with_symkey(access["key"], ciphered)
+        return blob
 
     async def _backend_vlob_group_check(self, to_check):
         payload = {"cmd": "vlob_group_check", "to_check": to_check}

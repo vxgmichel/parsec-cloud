@@ -121,3 +121,43 @@ async def test_fast_forward_on_offline_during_sync(
         stat = await fs.stat(path)
         stat2 = await fs2.stat(path)
         assert stat2 == stat
+
+
+@pytest.mark.trio
+async def test_concurrent_update(autojump_clock, alice, alice2, fs_factory):
+    fs = await fs_factory(alice)
+    fs2 = await fs_factory(alice2)
+
+    async with wait_for_entries_synced(fs.signal_ns, ["/", "/foo.txt"]) as events_received:
+
+        with freeze_time("2000-01-02"):
+            await fs.file_create("/foo.txt")
+
+        with freeze_time("2000-01-03"):
+            await fs.file_write("/foo.txt", b"v1")
+
+        await fs.sync("/foo.txt")
+
+    async with wait_for_entries_synced(fs2.signal_ns, ["/"]):
+        for _, id, path in events_received:
+            fs2.signal_ns.signal("fs.entry.updated").send(id=id)
+
+    async with wait_for_entries_synced(
+        fs.signal_ns, ["/foo.txt"]
+    ) as events_received, wait_for_entries_synced(fs2.signal_ns, ["/foo.txt"]) as events_received:
+        with freeze_time("2000-01-04"):
+            await fs.file_write("/foo.txt", b"fs's v2")
+        with freeze_time("2000-01-05"):
+            await fs2.file_write("/foo.txt", b"fs2's v2")
+
+        await fs.sync("/foo.txt")
+
+        with freeze_time("2000-01-06"):
+            await fs2.sync("/foo.txt")
+
+    stat = await fs.stat("/foo.txt")
+    stat2 = await fs2.stat("/foo.txt")
+    assert stat2 == stat
+
+    root_stat2 = await fs2.stat("/")
+    assert root_stat2["children"] == ["foo (conflict 2000-01-06 00:00:00).txt", "foo.txt"]

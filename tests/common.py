@@ -2,7 +2,6 @@ import trio
 import pendulum
 from unittest.mock import Mock
 from inspect import iscoroutinefunction
-from copy import deepcopy
 
 from parsec.core.local_db import LocalDB, LocalDBMissingEntry
 from parsec.networking import CookedSocket
@@ -18,9 +17,9 @@ class InMemoryLocalDB(LocalDB):
         except KeyError:
             raise LocalDBMissingEntry(access)
 
-    def set(self, access, data):
-        assert isinstance(data, (bytes, bytearray))
-        self._data[access["id"]] = data
+    def set(self, access, raw: bytes):
+        assert isinstance(raw, (bytes, bytearray))
+        self._data[access["id"]] = raw
 
     def clear(self, access):
         del self._data[access["id"]]

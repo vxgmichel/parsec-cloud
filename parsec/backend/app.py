@@ -199,6 +199,7 @@ class BackendApp:
         }
 
     async def init(self, nursery):
+        self.nursery = nursery
         if self.dbh:
             await self.dbh.init(nursery)
 

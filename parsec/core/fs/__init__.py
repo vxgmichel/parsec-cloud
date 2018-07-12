@@ -121,14 +121,4 @@ class FS(BaseAsyncComponent):
         await self._load_and_retry(self._local_folder_fs.delete, path)
 
     async def sync(self, path, recursive=True):
-        print(id(self), "sync", path)
-        sync_path, sync_recursive = self._local_folder_fs.get_sync_strategy(path, recursive)
-        access = await self._load_and_retry(self._local_folder_fs.get_access, sync_path)
-        notify_beacons = self._local_folder_fs.get_beacons(sync_path)
-        await self._load_and_retry(
-            self._syncer.sync,
-            sync_path,
-            access,
-            recursive=sync_recursive,
-            notify_beacons=notify_beacons,
-        )
+        await self._load_and_retry(self._syncer.sync, path, recursive=recursive)

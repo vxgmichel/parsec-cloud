@@ -46,7 +46,7 @@ class FolderSyncerMixin:
             to_sync = {k: v for k, v in manifest["children"].items() if k in recursive.keys()}
         else:
             to_sync = manifest["children"]
-            determine_child_recursiveness = lambda x: True
+            determine_child_recursiveness = lambda x: recursive
 
         # Synchronize the children.
         for child_name, child_access in to_sync.items():

@@ -85,7 +85,7 @@ class ResetCore(Exception):
     pass
 
 @pytest.mark.trio
-async def test_reproduce(running_backend, alice, core_factory, core_sock_factory):
+async def test_reproduce(running_backend, alice, core_factory_cm, core_sock_factory):
     bootstrapped = False
     file_oracle = FileOracle(base_version=1)
     to_run_rules = rule_selector()
@@ -94,22 +94,22 @@ async def test_reproduce(running_backend, alice, core_factory, core_sock_factory
 
     while not done:
         try:
-            core = await core_factory(devices=[alice], config={{"block_size": BLOCK_SIZE}})
-            await core.login(alice)
-            if not bootstrapped:
-                await core.fs.file_create("/foo.txt")
-                bootstrapped = True
-            if need_boostrap_sync:
-                need_boostrap_sync = False
-                await core.fs.sync("/")
+            async with core_factory_cm(devices=[alice], config={{"block_size": BLOCK_SIZE}}) as core:
+                await core.login(alice)
+                if not bootstrapped:
+                    await core.fs.file_create("/foo.txt")
+                    bootstrapped = True
+                if need_boostrap_sync:
+                    need_boostrap_sync = False
+                    await core.fs.sync("/")
 
-            sock = core_sock_factory(core)
-            while True:
-                afunc = next(to_run_rules, None)
-                if not afunc:
-                    done = True
-                    break
-                await afunc(sock, file_oracle)
+                sock = core_sock_factory(core, nursery=core.nursery)
+                while True:
+                    afunc = next(to_run_rules, None)
+                    if not afunc:
+                        done = True
+                        break
+                    await afunc(sock, file_oracle)
 
         except RestartCore:
             pass

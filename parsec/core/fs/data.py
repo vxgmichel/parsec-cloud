@@ -72,11 +72,20 @@ def new_block_access(block, offset):
     }
 
 
+def new_local_user_manifest(author):
+    manifest = new_local_workspace_manifest(author)
+    manifest["last_processed_message"] = 0
+    manifest["type"] = "local_user_manifest"
+    return manifest
+
+
 def new_local_workspace_manifest(author):
     now = pendulum.now()
 
     return {
-        "type": "folder_manifest",
+        "type": "local_workspace_manifest",
+        "need_sync": True,
+        "is_placeholder": True,
         "author": author,
         "beacon_id": uuid4().hex,
         "created": now,

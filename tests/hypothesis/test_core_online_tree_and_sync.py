@@ -9,8 +9,8 @@ from tests.hypothesis.common import (
     OracleFS,
     OracleFSFolder,
     rule,
+    initialize,
     normalize_path,
-    rule_once,
     failure_reproducer,
     reproduce_rule,
 )
@@ -103,10 +103,11 @@ class OracleFSWithSync:
 async def test_online_core_tree_and_sync(
     TrioDriverRuleBasedStateMachine,
     server_factory,
-    backend_factory,
-    core_factory,
+    backend_factory_cm,
+    core_factory_cm,
     core_sock_factory,
     device_factory,
+    monitor,
 ):
     class RestartCore(Exception):
         def __init__(self, reset_local_storage=False):
@@ -171,17 +172,16 @@ def rule_selector():
             self.core_cmd = lambda x: self.communicator.send(("core", x))
             self.oracle_fs = OracleFSWithSync()
 
-            self.device = device_factory()
+            device = device_factory()
 
             async def run_core(on_ready):
-                self.core = await core_factory(
-                    devices=[self.device], config={"backend_addr": server.addr}
-                )
-                try:
-                    await self.core.login(self.device)
-                    sock = core_sock_factory(self.core)
+                async with core_factory_cm(
+                    devices=[device], config={"backend_addr": server.addr}
+                ) as core:
+                    await core.login(device)
+                    sock = core_sock_factory(core, nursery=core.nursery)
 
-                    await on_ready(self.core)
+                    await on_ready(core)
 
                     while True:
                         target, msg = await self.communicator.trio_recv()
@@ -194,9 +194,6 @@ def rule_selector():
 
                         elif msg == "reset_core!":
                             raise RestartCore(reset_local_storage=True)
-
-                finally:
-                    await self.core.teardown()
 
             async def bootstrap_core(core):
                 task_status.started()
@@ -213,21 +210,21 @@ def rule_selector():
             async def restart_core_done(core):
                 await self.communicator.trio_respond(True)
 
-            self.backend = await backend_factory(devices=[self.device])
-            server = server_factory(self.backend.handle_client)
+            async with backend_factory_cm(devices=[device]) as backend:
+                server = server_factory(backend.handle_client, nursery=backend.nursery)
 
-            on_ready = bootstrap_core
-            while True:
-                try:
-                    await run_core(on_ready)
-                except RestartCore as exc:
-                    if exc.reset_local_storage:
-                        on_ready = reset_core_done
-                        self.device.local_db._data.clear()  # TODO: improve this
-                    else:
-                        on_ready = restart_core_done
+                on_ready = bootstrap_core
+                while True:
+                    try:
+                        await run_core(on_ready)
+                    except RestartCore as exc:
+                        if exc.reset_local_storage:
+                            on_ready = reset_core_done
+                            device.local_db._data.clear()  # TODO: improve this
+                        else:
+                            on_ready = restart_core_done
 
-        @rule_once(target=Folders)
+        @initialize(target=Folders)
         def get_root(self):
             return "/"
 

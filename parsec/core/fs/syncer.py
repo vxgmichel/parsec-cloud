@@ -76,12 +76,20 @@ class Syncer(FolderSyncerMixin, FileSyncerMixin):
             return
         await self.sync(path, access, recursive=False, notify_beacons=notify_beacons)
 
-    async def sync(self, path, access, recursive=True, notify_beacons=()):
+    async def sync(self, path, recursive=True):
         # Only allow a single synchronizing operation at a time to simplify
         # concurrency. Beside concurrent syncs would make each sync operation
         # slower which would make them less reliable with poor backend connection.
         async with self._lock:
-            await self._sync_nolock(path, access, recursive, notify_beacons)
+            try:
+                sync_path, sync_recursive = self.local_folder_fs.get_sync_strategy(path, recursive)
+                sync_access = self.local_folder_fs.get_access(sync_path)
+            except LocalDBMissingEntry:
+                # Nothing to do if entry is no present locally
+                return
+            notify_beacons = self.local_folder_fs.get_beacons(sync_path)
+
+            await self._sync_nolock(sync_path, sync_access, sync_recursive, notify_beacons)
 
     async def _sync_nolock(self, path, access, recursive, notify_beacons):
         try:

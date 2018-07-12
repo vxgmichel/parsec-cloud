@@ -1,4 +1,5 @@
 import pytest
+import inspect
 import attr
 import os
 import socket
@@ -15,8 +16,9 @@ import nacl
 
 from parsec.signals import Namespace as SignalNamespace
 from parsec.core import Core, CoreConfig
-from parsec.core.schemas import dumps_manifest
-from parsec.core.fs.data import new_access, new_user_manifest, remote_to_local_manifest
+from parsec.core.schemas import loads_manifest, dumps_manifest
+from parsec.core.fs.data import new_access, new_local_user_manifest, local_to_remote_manifest
+from parsec.core.encryption_manager import encrypt_with_secret_key
 from parsec.core.devices_manager import Device
 from parsec.backend import BackendApp, BackendConfig
 from parsec.backend.drivers import postgresql as pg_driver
@@ -187,6 +189,29 @@ def server_factory(nursery, tcp_stream_spy):
     return _server_factory
 
 
+def contextify(factory, teardown=lambda x: None):
+    @asynccontextmanager
+    async def _contextified(*args, **kwargs):
+        async with trio.open_nursery() as nursery:
+            if inspect.iscoroutinefunction(factory):
+                res = await factory(*args, **kwargs, nursery=nursery)
+            else:
+                res = factory(*args, **kwargs, nursery=nursery)
+            yield res
+            if inspect.iscoroutinefunction(teardown):
+                await teardown(res)
+            else:
+                teardown(res)
+            nursery.cancel_scope.cancel()
+
+    return _contextified
+
+
+@pytest.fixture
+def server_factory_cm(server_factory):
+    return contextify(server_factory)
+
+
 @pytest.fixture
 def device_factory():
     users = {}
@@ -210,7 +235,7 @@ def device_factory():
         except KeyError:
             user_privkey = PrivateKey.generate().encode()
             with freeze_time("2000-01-01"):
-                user_manifest_v1 = remote_to_local_manifest(new_user_manifest(device_id))
+                user_manifest_v1 = new_local_user_manifest(device_id)
             user_manifest_v1["base_version"] = 1
             user_manifest_access = new_access()
             users[user_id] = (user_privkey, user_manifest_access, user_manifest_v1)
@@ -300,13 +325,13 @@ def backend_factory(nursery, signal_ns_factory, backend_store, default_devices):
                     )
 
                     access = device.user_manifest_access
-                    manifest = device.local_db.get(access)
-                    # TODO...
-                    import pickle
-
-                    await backend.vlob.create(
-                        access["id"], access["rts"], access["wts"], pickle.dumps(manifest)
+                    local_user_manifest = loads_manifest(device.local_db.get(access))
+                    remote_user_manifest = local_to_remote_manifest(local_user_manifest)
+                    ciphered = encrypt_with_secret_key(
+                        device, access["key"], dumps_manifest(remote_user_manifest)
                     )
+
+                    await backend.vlob.create(access["id"], access["rts"], access["wts"], ciphered)
 
                 except UserAlreadyExistsError:
                     await backend.user.create_device(
@@ -319,6 +344,14 @@ def backend_factory(nursery, signal_ns_factory, backend_store, default_devices):
         return backend
 
     return _backend_factory
+
+
+@pytest.fixture
+def backend_factory_cm(backend_factory):
+    async def teardown(backend):
+        await backend.teardown()
+
+    return contextify(backend_factory, teardown)
 
 
 @pytest.fixture
@@ -412,6 +445,14 @@ def core_factory(tmpdir, nursery, signal_ns_factory, backend_addr, default_devic
 
 
 @pytest.fixture
+def core_factory_cm(core_factory):
+    async def teardown(core):
+        await core.teardown()
+
+    return contextify(core_factory, teardown)
+
+
+@pytest.fixture
 async def core(core_factory):
     return await core_factory()
 
@@ -428,14 +469,7 @@ def core_sock_factory(server_factory, nursery):
 
 @pytest.fixture
 def core_sock_factory_cm(core_sock_factory):
-    @asynccontextmanager
-    async def _core_sock_factory_cm(core):
-        async with trio.open_nursery() as nursery:
-            sock = core_sock_factory(core, nursery=nursery)
-            yield sock
-            nursery.cancel_scope.cancel()
-
-    return _core_sock_factory_cm
+    return contextify(core_sock_factory)
 
 
 @pytest.fixture

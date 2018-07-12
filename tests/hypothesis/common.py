@@ -4,6 +4,7 @@ from functools import wraps
 from hypothesis.stateful import (
     RuleBasedStateMachine,
     rule as vanilla_rule,
+    initialize as vanilla_initialize,
     precondition,
     VarReference,
 )
@@ -13,6 +14,19 @@ from huepy import red, bold
 def rule(**config):
     def dec(fn):
         @vanilla_rule(**config)
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            print(red(bold("%s(%s)" % (fn.__name__, kwargs))))
+            return fn(*args, **kwargs)
+
+        return wrapper
+
+    return dec
+
+
+def initialize(**config):
+    def dec(fn):
+        @vanilla_initialize(**config)
         @wraps(fn)
         def wrapper(*args, **kwargs):
             print(red(bold("%s(%s)" % (fn.__name__, kwargs))))

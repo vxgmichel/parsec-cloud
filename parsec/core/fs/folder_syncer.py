@@ -10,7 +10,7 @@ from parsec.core.fs.data import (
 )
 from parsec.core.fs.sync_base import SyncConcurrencyError
 from parsec.core.fs.merge_folders import merge_local_folder_manifests, merge_remote_folder_manifests
-from parsec.core.schemas import dumps_manifest
+from parsec.core.local_db import LocalDBMissingEntry
 
 
 def find_conflicting_name_for_child_entry(parent_manifest, original_name):
@@ -128,7 +128,11 @@ class FolderSyncerMixin:
         assert is_folder_manifest(base_manifest)
         synced_children = {}
         for child_name, child_access in base_manifest["children"].items():
-            child_manifest = self.local_folder_fs.get_manifest(child_access)
+            try:
+                child_manifest = self.local_folder_fs.get_manifest(child_access)
+            except LocalDBMissingEntry:
+                # Child not in local, no need to sync it then !
+                continue
             if not is_placeholder_manifest(child_manifest):
                 synced_children[child_name] = child_access
         base_manifest["children"] = synced_children

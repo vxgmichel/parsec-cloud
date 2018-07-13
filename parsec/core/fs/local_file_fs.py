@@ -85,6 +85,7 @@ class LocalFileFS:
         self._opened_cursors = {}
         self._hot_files = {}
         self._next_fd = 1
+        # TODO: handle fs.entry.moved events coming from sync
 
     def get_block(self, access):
         return self._local_db.get(access)
@@ -111,18 +112,19 @@ class LocalFileFS:
 
     def open(self, access) -> FileDescriptor:
         cursor = FileCursor(access)
-        hf = self._ensure_hot_file(access)
+        # Sanity check
+        manifest = self.local_folder_fs.get_manifest(access)
+        if not is_file_manifest(manifest):
+            raise IsADirectoryError(21, "Is a directory")
+
+        hf = self._ensure_hot_file(access, manifest)
         hf.cursors.add(id(cursor))
         fd = self._next_fd
         self._opened_cursors[fd] = cursor
         self._next_fd += 1
         return fd
 
-    def _ensure_hot_file(self, access):
-        # Sanity check
-        manifest = self.local_folder_fs.get_manifest(access)
-        assert is_file_manifest(manifest)
-
+    def _ensure_hot_file(self, access, manifest):
         hf = self._hot_files.get(access["id"])
         if not hf:
             hf = HotFile(manifest["size"], manifest["base_version"])

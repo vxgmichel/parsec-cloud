@@ -3,100 +3,75 @@ import pytest
 from string import ascii_lowercase
 from hypothesis import strategies as st, note
 from hypothesis.stateful import Bundle
-from copy import deepcopy
 
-from tests.hypothesis.common import (
-    OracleFS,
-    OracleFSFolder,
-    rule,
-    initialize,
-    normalize_path,
-    failure_reproducer,
-    reproduce_rule,
-)
+from tests.hypothesis.common import rule, initialize, failure_reproducer, reproduce_rule
 
 
 # The point is not to find breaking filenames here, so keep it simple
 st_entry_name = st.text(alphabet=ascii_lowercase, min_size=1, max_size=3)
 
 
-class OracleFSWithSync:
-    def __init__(self):
-        self.core_fs = OracleFS()
-        self.core_fs.sync("/")
-        self.synced_fs = OracleFS()
-        self.synced_fs.sync("/")
+@pytest.fixture
+def oracle_fs_with_sync_factory(oracle_fs_factory):
+    class OracleFSWithSync:
+        def __init__(self):
+            self.core_fs = oracle_fs_factory()
+            self.core_fs.sync("/")
+            self.synced_fs = oracle_fs_factory()
+            self.synced_fs.sync("/")
 
-    def create_file(self, path):
-        return self.core_fs.create_file(path)
+        def create_file(self, path):
+            return self.core_fs.create_file(path)
 
-    def create_folder(self, path):
-        return self.core_fs.create_folder(path)
+        def create_folder(self, path):
+            return self.core_fs.create_folder(path)
 
-    def delete(self, path):
-        return self.core_fs.delete(path)
+        def delete(self, path):
+            return self.core_fs.delete(path)
 
-    def move(self, src, dst):
-        return self.core_fs.move(src, dst)
+        def move(self, src, dst):
+            return self.core_fs.move(src, dst)
 
-    def flush(self, path):
-        return self.core_fs.flush(path)
+        def flush(self, path):
+            return self.core_fs.flush(path)
 
-    def sync(self, path):
-        res = self.core_fs.sync(path)
-        if res == "ok":
-            self._sync_oracles(path)
-        return res
+        def sync(self, path):
+            synced_items = []
 
-    def stat(self, path):
-        return self.core_fs.stat(path)
+            def sync_cb(path, stat):
+                synced_items.append((path, stat["base_version"], stat["type"]))
 
-    def reset_core(self):
-        self.core_fs = deepcopy(self.synced_fs)
-        # # Mimic what is done in CoreOnlineRWFile.reset_core_done
-        # self.core_fs.sync("/")
+            res = self.core_fs.sync(path, sync_cb=sync_cb)
+            if res == "ok":
+                new_synced = self.core_fs.copy()
 
-    def _sync_oracles(self, path):
-        path = normalize_path(path)
-        if path == "/":
-            self.synced_fs = deepcopy(self.core_fs)
-        else:
-            # Synchronize arbitrary path is a real landmine when dealing
-            # with placeholders
-            *parent_hops, name = path.split("/")
-            parent_dir = self.synced_fs.root
-            curr_path = ""
-            minimal_sync_on_existing_parent = None
-            # Make sure the path to reach the entry is defined (otherwise
-            # it means it is currently made of placeholders which should be
-            # synchronized)
-            for hop in parent_hops:
-                curr_path = "%s/%s" % (curr_path, hop) if hop else curr_path
-                if hop and hop not in parent_dir:
-                    if not minimal_sync_on_existing_parent:
-                        minimal_sync_on_existing_parent = curr_path, parent_dir
-                    parent_dir[hop] = OracleFSFolder(False, False, 1)
-                    parent_dir = parent_dir[hop]
+                def _recursive_keep_synced(path):
+                    stat = new_synced.entries_stats[path]
+                    if stat["type"] == "folder":
+                        for child in path.iterdir():
+                            _recursive_keep_synced(child)
+                    stat["need_sync"] = False
+                    if stat["is_placeholder"]:
+                        del new_synced.entries_stats[path]
+                        if stat["type"] == "file":
+                            path.unlink()
+                        else:
+                            path.rmdir()
 
-            core_entry = self.core_fs.get_path(path)
+                _recursive_keep_synced(new_synced.root)
+                self.synced_fs = new_synced
+            return res
 
-            # If the entry to sync is a placeholder, we have to do a minimal
-            # sync on it parent. The trick is a previously valid entry could
-            # have been deleted then recreated (hence being a placeholder in
-            # core_fs that will be omitted by the minimal sync and a regular
-            # entry in synced_fs...)
-            if not minimal_sync_on_existing_parent and core_entry.base_version == 1:
-                minimal_sync_on_existing_parent = "/".join(parent_hops), parent_dir
+        def stat(self, path):
+            return self.core_fs.stat(path)
 
-            if minimal_sync_on_existing_parent:
-                synced_parent_entry_path, synced_parent_entry = minimal_sync_on_existing_parent
-                synced_parent_entry.base_version += 1
-                core_parent_entry = self.core_fs.get_path(synced_parent_entry_path)
-                for child_name, child_core_entry in core_parent_entry.items():
-                    if child_core_entry.is_placeholder:
-                        synced_parent_entry.pop(child_name, None)
+        def reset_core(self):
+            self.core_fs = self.synced_fs.copy()
 
-            parent_dir[name] = deepcopy(core_entry)
+    def _oracle_fs_with_sync_factory():
+        return OracleFSWithSync()
+
+    return _oracle_fs_with_sync_factory
 
 
 @pytest.mark.slow
@@ -108,7 +83,7 @@ async def test_online_core_tree_and_sync(
     core_factory_cm,
     core_sock_factory,
     device_factory,
-    monitor,
+    oracle_fs_with_sync_factory,
 ):
     class RestartCore(Exception):
         def __init__(self, reset_local_storage=False):
@@ -119,7 +94,8 @@ async def test_online_core_tree_and_sync(
 import pytest
 import os
 
-from tests.hypothesis.test_core_online_tree_and_sync import OracleFSWithSync
+from tests.hypothesis.test_core_online_tree_and_sync import *
+from tests.hypothesis.conftest import *
 
 class RestartCore(Exception):
     pass
@@ -128,16 +104,17 @@ class ResetCore(Exception):
     pass
 
 @pytest.mark.trio
-async def test_reproduce(running_backend, alice, core_factory, core_sock_factory):
-    oracle_fs = OracleFSWithSync()
+async def test_reproduce(
+    running_backend, alice, core_factory_cm, core_sock_factory, oracle_fs_with_sync_factory
+):
+    oracle_fs = oracle_fs_with_sync_factory()
     to_run_rules = rule_selector()
     need_reset_sync = False
     done = False
 
     while not done:
         try:
-            core = await core_factory(config={"auto_sync": False})
-            try:
+            async with core_factory_cm(config={{"auto_sync": False}}) as core:
                 await core.login(alice)
                 if need_reset_sync:
                     need_reset_sync = False
@@ -150,8 +127,6 @@ async def test_reproduce(running_backend, alice, core_factory, core_sock_factory
                         done = True
                         break
                     await afunc(sock, oracle_fs)
-            finally:
-                await core.teardown()
 
         except RestartCore:
             pass
@@ -171,7 +146,7 @@ def rule_selector():
         async def trio_runner(self, task_status):
             self.sys_cmd = lambda x: self.communicator.send(("sys", x))
             self.core_cmd = lambda x: self.communicator.send(("core", x))
-            self.oracle_fs = OracleFSWithSync()
+            self.oracle_fs = oracle_fs_with_sync_factory()
 
             device = device_factory()
 
@@ -279,6 +254,7 @@ async def afunc(sock, oracle_fs):
     expected = oracle_fs.stat({path})
     assert rep["status"] == expected["status"]
     if expected["status"] == "ok":
+        assert rep["type"] == expected["type"]
         assert rep["base_version"] == expected["base_version"]
         assert rep["is_placeholder"] == expected["is_placeholder"]
         assert rep["need_sync"] == expected["need_sync"]
@@ -291,6 +267,7 @@ yield afunc
             expected = self.oracle_fs.stat(path)
             assert rep["status"] == expected["status"]
             if expected["status"] == "ok":
+                assert rep["type"] == expected["type"]
                 assert rep["base_version"] == expected["base_version"]
                 assert rep["is_placeholder"] == expected["is_placeholder"]
                 assert rep["need_sync"] == expected["need_sync"]
@@ -339,7 +316,7 @@ async def afunc(sock, oracle_fs):
     dst = os.path.join({dst_parent}, {dst_name})
     await sock.send({{"cmd": "move", "src": {src}, "dst": dst}})
     rep = await sock.recv()
-    expected_status = oracle_fs.move(src, dst)
+    expected_status = oracle_fs.move({src}, dst)
     assert rep["status"] == expected_status
 yield afunc
 """

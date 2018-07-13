@@ -210,7 +210,6 @@ class BackendEventsManager(BaseAsyncComponent):
 
             # Copy `self._subscribed_events` to avoid concurrent modifications
             subscribed_events = self._subscribed_events.copy()
-            print("===> SUBSCRIBED", subscribed_events)
 
             # TODO: allow to subscribe to multiple events in a single query...
             for args in subscribed_events:

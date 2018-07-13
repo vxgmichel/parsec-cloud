@@ -3,6 +3,7 @@ import pendulum
 from itertools import count
 
 from parsec.core.fs.buffer_ordering import merge_buffers_with_limits_and_alignment
+from parsec.core.fs.local_folder_fs import mark_manifest_modified
 from parsec.core.fs.local_file_fs import DirtyBlockBuffer, BlockBuffer
 from parsec.core.fs.sync_base import SyncConcurrencyError
 from parsec.core.fs.data import (
@@ -88,8 +89,10 @@ class FileSyncerMixin:
         moved_name = find_conflicting_name_for_child_entry(parent_manifest, entry_name)
         moved_access = new_access()
         parent_manifest["children"][moved_name] = moved_access
+        mark_manifest_modified(parent_manifest)
 
         diverged_manifest["base_version"] = 0
+        diverged_manifest["created"] = pendulum.now()
         diverged_manifest["need_sync"] = True
         diverged_manifest["is_placeholder"] = True
 

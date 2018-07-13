@@ -29,7 +29,7 @@ async def test_online_core_idempotent_sync(
     TrioDriverRuleBasedStateMachine,
     server_factory,
     backend_factory,
-    core_factory,
+    core_factory_cm,
     core_sock_factory,
     device_factory,
 ):
@@ -46,24 +46,24 @@ async def test_online_core_idempotent_sync(
             self.device = device_factory()
             self.backend = await backend_factory(devices=[self.device])
             server = server_factory(self.backend.handle_client)
-            self.core = await core_factory(
-                devices=[self.device], config={"backend_addr": server.addr}
-            )
-            await self.core.login(self.device)
+            async with core_factory_cm(
+                devices=[self.device], config={"backend_addr": server.addr, "auto_sync": False}
+            ) as self.core:
+                await self.core.login(self.device)
 
-            await self.core.fs.file_create("/good_file.txt")
-            await self.core.fs.folder_create("/good_folder")
-            await self.core.fs.file_create("/good_folder/good_sub_file.txt")
-            await self.core.fs.sync("/")
+                await self.core.fs.file_create("/good_file.txt")
+                await self.core.fs.folder_create("/good_folder")
+                await self.core.fs.file_create("/good_folder/good_sub_file.txt")
+                await self.core.fs.sync("/")
 
-            sock = core_sock_factory(self.core)
-            task_status.started()
+                sock = core_sock_factory(self.core)
+                task_status.started()
 
-            while True:
-                msg = await self.communicator.trio_recv()
-                await sock.send(msg)
-                rep = await sock.recv()
-                await self.communicator.trio_respond(rep)
+                while True:
+                    msg = await self.communicator.trio_recv()
+                    await sock.send(msg)
+                    rep = await sock.recv()
+                    await self.communicator.trio_respond(rep)
 
         @initialize(target=BadPath)
         def init_bad_path(self):

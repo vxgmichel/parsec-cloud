@@ -17,6 +17,7 @@ def new_user_manifest(author):
 
 
 def new_workspace_manifest(author):
+    assert "@" in author
     now = pendulum.now()
 
     return {
@@ -31,6 +32,7 @@ def new_workspace_manifest(author):
 
 
 def new_folder_manifest(author):
+    assert "@" in author
     now = pendulum.now()
 
     return {
@@ -44,6 +46,7 @@ def new_folder_manifest(author):
 
 
 def new_file_manifest(author):
+    assert "@" in author
     now = pendulum.now()
 
     return {
@@ -80,6 +83,7 @@ def new_local_user_manifest(author):
 
 
 def new_local_workspace_manifest(author):
+    assert "@" in author
     now = pendulum.now()
 
     return {
@@ -96,6 +100,7 @@ def new_local_workspace_manifest(author):
 
 
 def new_local_folder_manifest(author):
+    assert "@" in author
     now = pendulum.now()
 
     return {
@@ -111,6 +116,7 @@ def new_local_folder_manifest(author):
 
 
 def new_local_file_manifest(author):
+    assert "@" in author
     now = pendulum.now()
 
     return {

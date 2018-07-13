@@ -4,7 +4,7 @@ from string import ascii_lowercase
 from hypothesis import strategies as st, note
 from hypothesis.stateful import Bundle
 
-from tests.hypothesis.common import OracleFS, rule_once, rule
+from tests.hypothesis.common import rule_once, rule
 
 
 # The point is not to find breaking filenames here, so keep it simple
@@ -25,7 +25,6 @@ async def test_offline_core_tree(
         Folders = Bundle("folder")
 
         async def trio_runner(self, task_status):
-            # self.oracle_fs = OracleFS()
             self.oracle_fs = oracle_fs_factory()
 
             device = device_factory()

@@ -62,7 +62,6 @@ async def test_core_online_rw_and_sync(
     core_factory_cm,
     core_sock_factory,
     device_factory,
-    monitor,
 ):
     class RestartCore(Exception):
         def __init__(self, reset_local_storage=False):

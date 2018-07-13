@@ -29,7 +29,7 @@ class FSManifestLocalMiss(Exception):
 
 class LocalFolderFS:
     def __init__(self, device, signal_ns):
-        self.local_author = device.user_id
+        self.local_author = device.id
         self.root_access = device.user_manifest_access
         self._local_db = device.local_db
         self.signal_ns = signal_ns
@@ -272,6 +272,10 @@ class LocalFolderFS:
         self._delete(path, expect="folder")
 
     def move(self, src, dst):
+        # TODO: To symplify synchro we currently move the entry into a brand
+        # new access. However this is not recursive (i.e. the entry's
+        # children will keep there original access)...
+
         src = normalize_path(src)
         dst = normalize_path(dst)
 
@@ -297,8 +301,8 @@ class LocalFolderFS:
                 return
 
             existing_entry_access = parent_manifest["children"].get(child_dst)
+            src_entry_manifest = self.get_manifest(entry)
             if existing_entry_access:
-                src_entry_manifest = self.get_manifest(entry)
                 existing_entry_manifest = self.get_manifest(existing_entry_access)
                 if is_folder_manifest(src_entry_manifest):
                     if is_file_manifest(existing_entry_manifest):
@@ -309,7 +313,12 @@ class LocalFolderFS:
                     if is_folder_manifest(existing_entry_manifest):
                         raise IsADirectoryError(21, "Is a directory")
 
-            parent_manifest["children"][child_dst] = entry
+            moved_access = new_access()
+            parent_manifest["children"][child_dst] = moved_access
+            src_entry_manifest["base_version"] = 0
+            src_entry_manifest["is_placeholder"] = True
+            src_entry_manifest["need_sync"] = True
+            self.set_manifest(moved_access, src_entry_manifest)
             mark_manifest_modified(parent_manifest)
 
             self.set_manifest(parent_access, parent_manifest)
@@ -333,8 +342,8 @@ class LocalFolderFS:
                 raise FileNotFoundError(2, "No such file or directory", src)
 
             existing_entry_access = parent_dst_manifest["children"].get(child_dst)
+            src_entry_manifest = self.get_manifest(entry)
             if existing_entry_access:
-                src_entry_manifest = self.get_manifest(entry)
                 existing_entry_manifest = self.get_manifest(existing_entry_access)
                 if is_folder_manifest(src_entry_manifest):
                     if is_file_manifest(existing_entry_manifest):
@@ -345,7 +354,12 @@ class LocalFolderFS:
                     if is_folder_manifest(existing_entry_manifest):
                         raise IsADirectoryError(21, "Is a directory")
 
-            parent_dst_manifest["children"][child_dst] = entry
+            moved_access = new_access()
+            parent_dst_manifest["children"][child_dst] = moved_access
+            src_entry_manifest["base_version"] = 0
+            src_entry_manifest["is_placeholder"] = True
+            src_entry_manifest["need_sync"] = True
+            self.set_manifest(moved_access, src_entry_manifest)
 
             mark_manifest_modified(parent_src_manifest)
             mark_manifest_modified(parent_dst_manifest)

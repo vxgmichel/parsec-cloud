@@ -57,9 +57,13 @@ from tests.hypothesis.test_core_online_tree_and_sync_multicore import compare_fs
 
 
 @pytest.mark.trio
-async def test_reproduce(running_backend, core, alice_core_sock, core2, alice2_core2_sock):
-    socks = {{'core_1': alice_core_sock, 'core_2': alice2_core2_sock}}
-    {body}
+async def test_reproduce(running_backend, alice, alice2, core_factory_cm, core_sock_factory):
+    async with core_factory_cm(config={{"auto_sync": False}}) as core, \\
+            core_factory_cm(config={{"auto_sync": False}}) as core2:
+        await core.login(alice)
+        await core2.login(alice2)
+        socks = {{'core_1': core_sock_factory(core), 'core_2': core_sock_factory(core2)}}
+        {body}
 """
     )
     class MultiCoreTreeAndSync(TrioDriverRuleBasedStateMachine):
@@ -75,9 +79,9 @@ async def test_reproduce(running_backend, core, alice_core_sock, core2, alice2_c
             server = server_factory(backend.handle_client)
 
             async with core_factory_cm(
-                devices=[device1], config={"backend_addr": server.addr}
+                devices=[device1], config={"backend_addr": server.addr, "auto_sync": False}
             ) as self.core_1, core_factory_cm(
-                devices=[device2], config={"backend_addr": server.addr}
+                devices=[device2], config={"backend_addr": server.addr, "auto_sync": False}
             ) as self.core_2:
                 await self.core_1.login(device1)
                 await self.core_2.login(device2)
@@ -199,6 +203,12 @@ assert rep["status"] in ("ok", "invalid_path")
 await socks["core_1"].send({{"cmd": "synchronize", "path": "/"}})
 rep = await socks["core_1"].recv()
 assert rep["status"] == "ok"
+await socks["core_1"].send({{"cmd": "synchronize", "path": "/"}})
+rep = await socks["core_1"].recv()
+assert rep["status"] == "ok"
+await socks["core_2"].send({{"cmd": "synchronize", "path": "/"}})
+rep = await socks["core_2"].recv()
+assert rep["status"] == "ok"
 await socks["core_2"].send({{"cmd": "synchronize", "path": "/"}})
 rep = await socks["core_2"].recv()
 assert rep["status"] == "ok"
@@ -213,6 +223,8 @@ compare_fs_dumps(fs_dump_1, fs_dump_2)
         )
         def sync_all_the_files(self):
             print("~~~ SYNC 1 ~~~")
+            # Send two sync in a row given file conflict results are not synced
+            # once created
             rep1 = self.core_cmd("core_1", {"cmd": "synchronize", "path": "/"})
             rep1 = self.core_cmd("core_1", {"cmd": "synchronize", "path": "/"})
             assert rep1["status"] == "ok"

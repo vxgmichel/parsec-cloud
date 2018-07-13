@@ -36,7 +36,7 @@ async def test_core_offline_restart_and_tree(
             self.oracle_fs = oracle_fs_factory()
 
             async def run_core(on_ready):
-                self.core = await core_factory(devices=[device])
+                self.core = await core_factory(devices=[device], config={"auto_sync": False})
                 try:
                     await self.core.login(device)
                     sock = core_sock_factory(self.core)

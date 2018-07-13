@@ -120,7 +120,6 @@ async def test_need_login_cmds(core, core_sock_factory):
         "file_read",
         "file_write",
         "synchronize",
-        "flush",
         "stat",
         "folder_create",
         "move",

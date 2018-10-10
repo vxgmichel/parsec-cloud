@@ -10,19 +10,8 @@ from parsec.core.mountpoint.exceptions import MountpointConfigurationError
 
 
 def _bootstrap_mountpoint(mountpoint):
-    if os.name == "posix":
-        # On POSIX systems, mounting target must exists
-        mountpoint.mkdir(exist_ok=True, parents=True)
-        initial_st_dev = mountpoint.stat().st_dev
-    else:
-        # On Windows, only parent's mounting target must exists
-        mountpoint.parent.mkdir(exist_ok=True, parents=True)
-        if mountpoint.exists():
-            raise MountpointConfigurationError(
-                f"Mountpoint `{mountpoint.absolute()}` must not exists on windows"
-            )
-        initial_st_dev = None
-
+    mountpoint.mkdir(exist_ok=True, parents=True)
+    initial_st_dev = mountpoint.stat().st_dev
     return initial_st_dev
 
 
@@ -107,11 +96,10 @@ async def _stop_fuse_thread(mountpoint, fuse_operations, fuse_thread_stopped):
 
     await trio.run_sync_in_worker_thread(_stop_fuse)
 
-    if os.name == "posix":
-        try:
-            mountpoint.rmdir()
-        except OSError:
-            pass
+    try:
+        mountpoint.rmdir()
+    except OSError:
+        pass
 
 
 class ThreadFSAccess:

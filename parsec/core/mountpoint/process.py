@@ -15,19 +15,8 @@ multiprocessing.freeze_support()
 
 
 def _bootstrap_mountpoint(mountpoint):
-    if os.name == "posix":
-        # On POSIX systems, mounting target must exists
-        mountpoint.mkdir(exist_ok=True, parents=True)
-        initial_st_dev = mountpoint.stat().st_dev
-    else:
-        # On Windows, only parent's mounting target must exists
-        mountpoint.parent.mkdir(exist_ok=True, parents=True)
-        if mountpoint.exists():
-            raise MountpointConfigurationError(
-                f"Mountpoint `{mountpoint.absolute()}` must not exists on windows"
-            )
-        initial_st_dev = None
-
+    mountpoint.mkdir(exist_ok=True, parents=True)
+    initial_st_dev = mountpoint.stat().st_dev
     return initial_st_dev
 
 
@@ -89,7 +78,7 @@ async def _wait_for_fuse_ready(mountpoint, initial_st_dev, started_cb):
 
     def _wait_for_fuse_ready_thread():
         while not need_stop:
-            # print('wait for fuse...')
+            print("wait for fuse...")
             time.sleep(0.1)
             try:
                 if mountpoint.stat().st_dev != initial_st_dev:
@@ -130,11 +119,10 @@ async def _stop_fuse_process(mountpoint, fuse_process):
     if fuse_process.is_alive():
         await trio.run_sync_in_worker_thread(_stop_fuse)
 
-    if os.name == "posix":
-        try:
-            mountpoint.rmdir()
-        except OSError:
-            pass
+    try:
+        mountpoint.rmdir()
+    except OSError:
+        pass
 
 
 class ProcessFSAccess:

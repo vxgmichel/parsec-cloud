@@ -12,10 +12,10 @@ from tests.common import call_with_control
 
 @pytest.fixture(params=("thread", "process"))
 def fuse_mode(request):
-    if request.param == "process":
-        pytest.skip("Quick fix for CI...")
     if request.param == "thread" and os.name == "nt":
         pytest.skip("Windows doesn't support threaded fuse")
+    if request.param == "process" and os.name == "posix":
+        pytest.skip("Nobody ain't not time for this on POSIX !!!")
     return request.param
 
 

@@ -149,9 +149,15 @@ def _extract_libs_cffi_backend():
     return [(lib.as_posix(), lib.name) for lib in cffi_backend_dir.glob("*")]
 
 
+def _ui_files():
+    import pathlib
+
+    ui_dir = pathlib.Path("parsec/core/gui/ui")
+    return [(file.as_posix(), file.name) for file in ui_dir.glob("*")]
+
+
 build_exe_options = {
     "packages": [
-        "parsec.core.gui.ui",
         "idna",
         "trio._core",
         "nacl._sodium",
@@ -162,7 +168,7 @@ build_exe_options = {
         "unittest.mock",
     ],
     # nacl store it cffi shared lib in a very strange place...
-    "include_files": _extract_libs_cffi_backend(),
+    "include_files": _extract_libs_cffi_backend() + _ui_files(),
 }
 
 

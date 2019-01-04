@@ -290,7 +290,7 @@ class PublicKey(Field):
             raise ValidationError("Invalid verify key.")
 
 
-SymetricKey = Bytes
+SymetricKey = bytes_based_field_factory(bytes)
 Bytes = bytes_based_field_factory(bytes)
 DeviceID = str_based_field_factory(_DeviceID)
 UserID = str_based_field_factory(_UserID)
